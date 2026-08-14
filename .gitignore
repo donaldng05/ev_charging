@@ -37,3 +37,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Private project planning
+docs/PROJECT_PLAN.md
