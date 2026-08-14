@@ -1,0 +1,14 @@
+---
+description: MVP 1 scope freeze for EV charging intelligence. Hybrid ACN-Data + synthetic fleet; no ACN-Sim/RL in this phase.
+alwaysApply: true
+---
+
+# MVP 1 scope
+
+- Hybrid data: real charging sessions from ACN-Data; synthetic SOC, battery capacity, trips, and fleet.
+- Own discrete-time simulator in MVP 1. ACN-Sim is a later comparison path, not an M3 dependency.
+- Temporal splits only. Never randomly shuffle sessions or demand intervals.
+- Canonical snapshots are CSV under `data/` (gitignored). Pickle is notebook-scratch only.
+- API token from `CHARGEOPT_ACN_TOKEN`, default `DEMO_TOKEN`. Never commit tokens.
+- Do not add RL, transformers, Kafka, Spark, or "use ACN-Sim because it exists."
+- Experiment numbers live in `configs/default.yaml`. Do not hardcode fleet size, timestep, or horizon.

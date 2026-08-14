@@ -36,6 +36,8 @@ uv run pre-commit install
 ```text
 uv run chargeopt --help
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
+uv run chargeopt data pull
+uv run chargeopt data features
 ```
 
 The experiment runner is a placeholder until M5. It already loads and validates `configs/default.yaml`, seeds the process, and prints a stable experiment id.
@@ -43,7 +45,6 @@ The experiment runner is a placeholder until M5. It already loads and validates 
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Dataset](docs/DATASET.md)
 - [Experiments](docs/EXPERIMENTS.md)
 - [Assumptions](docs/ASSUMPTIONS.md)
-
-Dataset schemas will be documented after a dataset is chosen.

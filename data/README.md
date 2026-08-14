@@ -1,3 +1,4 @@
-Raw, processed, and synthetic datasets live here. They are gitignored.
+Raw, processed, and synthetic datasets live here. They are gitignored except `.gitkeep`.
 
-Do not invent schemas until a dataset is chosen.
+Canonical ACN-Data snapshot: `data/raw/acn_caltech_sessions.csv` via `uv run chargeopt data pull`.
+Demand table: `data/processed/acn_caltech_demand_15min.csv` via `uv run chargeopt data features`.

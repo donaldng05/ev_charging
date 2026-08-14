@@ -5,6 +5,7 @@ MVP numbers live in YAML. Code must not hardcode fleet size, timestep, or horizo
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
@@ -92,6 +93,38 @@ class StressConfig(BaseModel):
     station_availability: float = Field(gt=0, le=1)
 
 
+class DataConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    site: str
+    timezone: str
+    start: datetime
+    end: datetime
+    snapshot_path: Path
+    processed_path: Path
+    train_fraction: float = Field(gt=0, lt=1)
+    val_fraction: float = Field(gt=0, lt=1)
+
+    @field_validator("site")
+    @classmethod
+    def site_must_be_acn(cls, value: str) -> str:
+        allowed = {"caltech", "jpl", "office001"}
+        if value not in allowed:
+            msg = f"data.site must be one of {sorted(allowed)}"
+            raise ValueError(msg)
+        return value
+
+    @model_validator(mode="after")
+    def range_and_split(self) -> Self:
+        if self.end <= self.start:
+            msg = "data.end must be after data.start"
+            raise ValueError(msg)
+        if self.train_fraction + self.val_fraction >= 1:
+            msg = "data.train_fraction + data.val_fraction must be < 1"
+            raise ValueError(msg)
+        return self
+
+
 class LoggingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,6 +147,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     simulation: SimulationConfig
+    data: DataConfig
     experiment: ExperimentConfig
     stress: StressConfig
     logging: LoggingConfig = LoggingConfig()
@@ -136,11 +170,12 @@ class RuntimeSettings(BaseSettings):
 
     config_path: Path = Path("configs/default.yaml")
     log_level: str | None = None
+    acn_token: str = "DEMO_TOKEN"
 
 
 def default_config_path() -> Path:
     """Repo-root `configs/default.yaml` when running from a checkout."""
-    return Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
+    return project_root() / "configs" / "default.yaml"
 
 
 def resolve_config_path(path: Path | None = None) -> Path:
@@ -161,6 +196,16 @@ def resolve_config_path(path: Path | None = None) -> Path:
 
     msg = "config file not found: configs/default.yaml"
     raise FileNotFoundError(msg)
+
+
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def resolve_data_path(path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return project_root() / path
 
 
 def load_config(path: Path | str | None = None) -> AppConfig:
