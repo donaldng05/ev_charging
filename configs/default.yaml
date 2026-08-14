@@ -1,0 +1,29 @@
+simulation:
+  region: synthetic_metro
+  fleet_size: 30
+  n_stations: 10
+  timestep_minutes: 15
+  horizon_hours: 24
+  charger_power_kw: 150.0
+
+experiment:
+  policies:
+    - nearest
+    - cheapest
+    - ml_informed
+  metrics:
+    - energy_cost
+    - avg_wait_minutes
+    - soc_violations
+    - energy_usage_kwh
+    - station_utilization
+    - vehicle_idle_minutes
+  seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+
+stress:
+  demand_multiplier: 1.5
+  temperature_c: -10.0
+  station_availability: 0.8
+
+logging:
+  level: INFO
