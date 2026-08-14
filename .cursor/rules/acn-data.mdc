@@ -1,0 +1,14 @@
+---
+description: ACN-Data is the session source of truth. Caltech is one site with many EVSEs, not a city of stations.
+globs: src/chargeopt/data/**,notebooks/**,docs/DATASET.md
+alwaysApply: false
+---
+
+# ACN-Data mapping
+
+- Session columns come from ACN-Data (see [docs/DATASET.md](docs/DATASET.md)). Do not invent Parquet schemas or extra session fields.
+- Caltech / JPL / office001 are **sites**. Each site has many `stationID` / `spaceID` EVSEs. Do not treat EVSEs as geographically independent city stations.
+- Demand ML aggregates real Caltech sessions (site-level 15-minute energy first).
+- Simulator stations are synthetic and calibrated from ACN arrival / energy / duration stats. Vehicle telemetry is synthetic.
+- MVP ingest site is `caltech` only. JPL and office001 are later robustness splits.
+- Use `DataClient.get_sessions_by_time`, not ACN-Sim `generate_events`, for data prep.

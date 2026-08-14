@@ -36,7 +36,7 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC |
 | `chargeopt.optimization` | M4 | Nearest / cheapest / ML-informed policies |
 | `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
-| `chargeopt.cli` | M0 / M5 | `chargeopt experiment ...` |
+| `chargeopt.cli` | M0 / M1 / M5 | `chargeopt experiment ...` and `chargeopt data pull|features` |
 
 Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not hardcode fleet size, timestep, or horizon.
 
@@ -54,4 +54,4 @@ RL, transformers, GNNs, deep learning requirement, Kafka, Spark, CUDA, Kubernete
 
 ## Dataset contracts
 
-Deferred until a dataset is chosen. Do not invent Parquet schemas ahead of the columns.
+ACN-Data (Caltech sessions) is the real charging-behavior source. Vehicle SOC/trips and geo-distributed sim stations are synthetic. See [DATASET.md](DATASET.md). ACN-Sim is not used in MVP 1.

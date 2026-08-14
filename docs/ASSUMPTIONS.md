@@ -4,7 +4,7 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 
 ## Fleet and infrastructure
 
-- One synthetic metro region, one fleet.
+- One hybrid region: real Caltech ACN-Data for demand, synthetic metro stations for the fleet simulator. Do not treat Caltech EVSEs as city-scale stations.
 - Generic EV profiles. No Tesla-specific vehicle models or proprietary telemetry.
 - About 30 vehicles and 10 stations (see `configs/default.yaml`).
 - Stations are homogeneous except location, number of chargers, charging power, and price.
@@ -24,7 +24,7 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 
 - Trip energy starts from a fixed-rate baseline (`kWh/km`) plus an ML regressor once M2 lands.
 - Demand forecasting predicts next-hour station energy demand, not individual sessions.
-- Vehicle telemetry may be synthetic and calibrated against public charging behavior. That distinction must stay explicit once a dataset is chosen.
+- Vehicle telemetry is synthetic. Charging demand is calibrated from public ACN-Data (Caltech). That distinction stays explicit.
 
 ## Decisions
 

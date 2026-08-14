@@ -1,0 +1,41 @@
+---
+description: Official ACN-Data and ACN-Sim API references for EV charging work.
+alwaysApply: true
+---
+
+# ACN-Portal reference
+
+Use the official documentation below for exact signatures and behavior. Do not
+copy the whole API into project code or this rule.
+
+## ACN-Data
+
+- [ACN-Data overview](https://acnportal.readthedocs.io/en/latest/acndata/index.html)
+- [DataClient](https://acnportal.readthedocs.io/en/latest/acndata/data_client.html)
+
+Use `DataClient.get_sessions_by_time` for historical-session ingestion. Keep API
+pulling, raw-field normalization, validation, and CSV snapshots in
+`chargeopt.data`.
+
+## ACN-Sim
+
+- [Simulator](https://acnportal.readthedocs.io/en/latest/acnsim/simulator.html)
+- [Interface](https://acnportal.readthedocs.io/en/latest/acnsim/interface.html)
+- [ChargingNetwork](https://acnportal.readthedocs.io/en/latest/acnsim/network/charging_network.html)
+- [Current](https://acnportal.readthedocs.io/en/latest/acnsim/network/current.html)
+- [Sites](https://acnportal.readthedocs.io/en/latest/acnsim/network/sites.html)
+- [Events](https://acnportal.readthedocs.io/en/latest/acnsim/events/events.html)
+- [EventQueue](https://acnportal.readthedocs.io/en/latest/acnsim/events/event_queue.html)
+- [Analysis](https://acnportal.readthedocs.io/en/latest/acnsim/analysis.html)
+- [Models](https://acnportal.readthedocs.io/en/latest/acnsim/models.html)
+
+ACN-Sim owns network, event, scheduler, charging, and simulation mechanics.
+Consult it before reimplementing equivalent simulator behavior.
+
+## Project boundary
+
+- ACN-Data supplies real charging-session behavior for demand calibration.
+- MVP vehicle telemetry and geo-distributed stations remain synthetic.
+- ACN-Sim is a later comparison/integration path, not an excuse to expand MVP 1.
+- Keep project-specific demand features, policies, and evaluation in
+  `chargeopt`; use ACN-Portal for documented upstream capabilities.

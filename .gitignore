@@ -20,13 +20,11 @@ coverage.xml
 # Data and model artifacts (not committed)
 *.parquet
 *.csv
+!tests/fixtures/**/*.csv
 *.joblib
 *.pkl
 *.pickle
-data/raw/*
-data/processed/*
-data/synthetic/*
-!data/**/.gitkeep
+data/*
 
 # Notebooks
 .ipynb_checkpoints/

@@ -31,6 +31,8 @@ def test_default_config_round_trip() -> None:
     assert config.stress.demand_multiplier == 1.5
     assert config.stress.temperature_c == -10.0
     assert config.stress.station_availability == 0.8
+    assert config.data.site == "caltech"
+    assert config.data.train_fraction + config.data.val_fraction < 1
 
 
 def test_load_config_from_explicit_path(tmp_path: Path) -> None:
@@ -38,7 +40,7 @@ def test_load_config_from_explicit_path(tmp_path: Path) -> None:
     path = tmp_path / "copy.yaml"
     path.write_text(source, encoding="utf-8")
     config = load_config(path)
-    assert config.simulation.region == "synthetic_metro"
+    assert config.simulation.region == "caltech_hybrid"
 
 
 def test_missing_key_fails(tmp_path: Path) -> None:

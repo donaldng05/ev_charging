@@ -1,10 +1,20 @@
 simulation:
-  region: synthetic_metro
+  region: caltech_hybrid
   fleet_size: 30
   n_stations: 10
   timestep_minutes: 15
   horizon_hours: 24
   charger_power_kw: 150.0
+
+data:
+  site: caltech
+  timezone: America/Los_Angeles
+  start: "2018-09-05T00:00:00"
+  end: "2018-09-12T00:00:00"
+  snapshot_path: data/raw/acn_caltech_sessions.csv
+  processed_path: data/processed/acn_caltech_demand_15min.csv
+  train_fraction: 0.7
+  val_fraction: 0.15
 
 experiment:
   policies:

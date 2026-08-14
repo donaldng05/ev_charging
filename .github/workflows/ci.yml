@@ -20,7 +20,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --frozen --all-groups
+        run: uv sync --frozen --no-default-groups --group dev
 
       - name: Format
         run: uv run ruff format --check .
