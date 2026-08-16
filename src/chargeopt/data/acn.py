@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ import pandas as pd
 
 from chargeopt.data.io import write_sessions_csv
 from chargeopt.data.validation import validate_sessions
+
+LOGGER = logging.getLogger(__name__)
 
 
 def localize_naive(value: datetime, timezone_name: str) -> datetime:
@@ -52,6 +55,12 @@ def normalize_session(raw: dict[str, Any], *, site: str) -> dict[str, Any]:
         msg = f"session missing connectionTime/disconnectTime: {raw.get('sessionID')}"
         raise ValueError(msg)
     done = _as_datetime(raw.get("doneChargingTime"))
+    if done is not None and not start <= done <= end:
+        LOGGER.warning(
+            "ignoring invalid doneChargingTime for session %s",
+            raw.get("sessionID"),
+        )
+        done = None
     duration_min = (end - start).total_seconds() / 60.0
     local_start = start.astimezone(ZoneInfo("America/Los_Angeles"))
     energy = raw.get("kWhDelivered")

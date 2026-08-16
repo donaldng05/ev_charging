@@ -43,6 +43,22 @@ def test_normalize_session_maps_acn_fields() -> None:
     ChargingSession.model_validate(row)
 
 
+def test_normalize_session_drops_done_time_before_connection() -> None:
+    raw = {**RAW_SESSION, "doneChargingTime": datetime(2018, 9, 4, tzinfo=UTC)}
+
+    row = normalize_session(raw, site="caltech")
+
+    assert row["done_charging_time"] is None
+
+
+def test_normalize_session_drops_done_time_after_disconnect() -> None:
+    raw = {**RAW_SESSION, "doneChargingTime": datetime(2018, 9, 8, tzinfo=UTC)}
+
+    row = normalize_session(raw, site="caltech")
+
+    assert row["done_charging_time"] is None
+
+
 def test_snapshot_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "sessions.csv"
     frame = snapshot_sessions([RAW_SESSION], site="caltech", path=path)
