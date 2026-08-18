@@ -18,7 +18,12 @@ Caltech is **one site with many EVSEs**. `stationID` / `spaceID` are garage-scal
 
 ## ACN-Data raw fields (observed)
 
-Pulled via `DataClient.get_sessions_by_time("caltech", ...)` with `DEMO_TOKEN` (window 2018-09-05 to 2018-09-06). Keys:
+Pulled via `DataClient.get_sessions_by_time("caltech", ...)` for the ingest
+window in `configs/default.yaml` (`2018-05-01` to `2026-08-17`, pinned so
+clones do not depend on "today"). `chargeopt data pull` walks that range in
+30-day chunks and drops duplicate `sessionID`s at chunk boundaries. A
+registered `CHARGEOPT_ACN_TOKEN` is required; `DEMO_TOKEN` may only cover a
+short demo week. Observed keys:
 
 | Field | Example / notes |
 | --- | --- |
@@ -61,16 +66,78 @@ Canonical snapshot: `data/raw/acn_caltech_sessions.csv` (gitignored). Not pickle
 - `n_arrivals` — sessions whose `start_time` falls in the bin
 - `energy_kwh` — `kWhDelivered` spread uniformly over `[start_time, done_charging_time]` (fallback: `end_time`)
 - calendar: `hour`, `day_of_week`, `is_weekend`, `month`
-- lags: `lag_15m`, `lag_1h`, `lag_24h`
-- rolling means: `rolling_mean_1h`, `rolling_mean_24h`
+- lags: `lag_15m`, `lag_1h`, `lag_24h`, `lag_1w` (672 bins)
+- rolling means: `rolling_mean_1h`, `rolling_mean_24h`, `rolling_mean_7d`
+- `era` — `pre_covid` / `covid` / `post_covid` from `data.covid_start` /
+  `data.covid_end` (eval slices only; not an RF feature)
 - `split` — `train` / `val` / `test`
 
 Holidays are out of MVP 1.
 
+## Demand forecast target
+
+The stored demand CSV does not include a forecast column. At train time M2 derives
+`target_next_hour_energy_kwh` as the sum of `energy_kwh` over the next
+`models.demand.horizon_minutes` (60 minutes → four 15-minute bins). Rows whose
+horizon crosses a `split` boundary are dropped so train labels never use val/test
+energy.
+
+Demand features for the learned model are calendar fields plus lags and rolling
+means already in the table (`lag_1w` and `rolling_mean_7d` included). Current-bin
+`energy_kwh`, `n_arrivals`, and `era` are not features.
+
+## Demand prediction CSV
+
+Canonical artifact: `data/processed/demand_predictions.csv` (gitignored).
+
+| Column | Notes |
+| --- | --- |
+| `timestamp` | Forecast issue time (bin start, UTC) |
+| `split` | `train` / `val` / `test` of that timestamp |
+| `target` | Next-hour energy (kWh) |
+| `prediction` | Model output |
+| `model` | `last_observation`, `historical_average`, `weekly_naive`, or `random_forest` |
+| `seed` | Config/CLI seed |
+
+## Synthetic trips
+
+Canonical artifact: `data/processed/synthetic_trips.csv` (gitignored). Generated
+with the experiment seed; not ACN-Data.
+
+| Column | Notes |
+| --- | --- |
+| `trip_id` | `trip-00000` … sequential generation order |
+| `distance_km` | Sampled, clipped to a positive minimum |
+| `duration_min` | Sampled, clipped to a positive minimum |
+| `speed_kmh` | `distance_km / (duration_min / 60)` |
+| `temperature_c` | Synthetic ambient temperature |
+| `energy_kwh` | Rate × distance × cold penalty + noise |
+| `split` | Chronological generation-index split (same fractions as demand) |
+
+Physics baseline predicts `rate_kwh_per_km * distance_km`. The Random Forest
+fits the residual `energy_kwh - physics` using `distance_km` and `temperature_c`
+only (`duration_min` is sampled but is not in the generative formula), then
+adds physics back. Energy predictions use `trip_id` in place of `timestamp`
+with the same `split`, `target`, `prediction`, `model`, `seed` contract
+(`model` is `physics` or `random_forest`). `chargeopt models energy` also writes
+a dedicated −10°C holdout metrics CSV (`models.energy.cold_metrics_path`).
+
 ## Temporal split
 
-Never randomly shuffle sessions or demand intervals. Split the sorted 15-minute timeline by fraction (`train_fraction`, `val_fraction` in config; test is the remainder). Calendar cut dates are **not** frozen until a longer snapshot exists; the rule is time-order, not a specific year.
+Never randomly shuffle sessions or demand intervals. Split the sorted 15-minute
+timeline by fraction (`train_fraction`, `val_fraction` in config; test is the
+remainder). Hyperparameter search uses expanding-window `TimeSeriesSplit` **inside
+train only** (with a gap of `horizon_bins`), confirms once on `val`, then refits
+on `train+val`. Test is scored once and is never used for search. Era labels
+describe COVID campus regimes for error slices; they are not model features, so
+a 70/15/15 split on the full Caltech window puts COVID inside train and recent
+years in test.
+
+Walk-forward fold metrics: `data/processed/demand_tune.csv` (gitignored).
+Hour/weekend/era error slices: `data/processed/demand_error_slices.csv`.
 
 ## What is not in this dataset
 
-SOC, battery capacity, current location, next trip, trip energy, electricity price, weather, and lat/lon between independent public stations.
+SOC, battery capacity, current location, next trip, electricity price, and
+lat/lon between independent public stations. Synthetic trips and temperatures
+are generated in M2; they are not observed ACN fields.

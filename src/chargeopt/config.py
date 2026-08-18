@@ -93,6 +93,70 @@ class StressConfig(BaseModel):
     station_availability: float = Field(gt=0, le=1)
 
 
+class HyperparameterGrid(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_estimators: list[int] = Field(min_length=1)
+    max_depth: list[int] = Field(min_length=1)
+    min_samples_leaf: list[int] = Field(min_length=1)
+
+    @field_validator("n_estimators", "max_depth", "min_samples_leaf")
+    @classmethod
+    def grid_values_positive(cls, value: list[int]) -> list[int]:
+        if any(item < 1 for item in value):
+            msg = "search grid values must be >= 1"
+            raise ValueError(msg)
+        return value
+
+
+class DemandModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizon_minutes: int = Field(gt=0)
+    n_estimators: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    min_samples_leaf: int = Field(ge=1)
+    n_splits: int = Field(ge=2)
+    search: HyperparameterGrid
+    predictions_path: Path
+    metrics_path: Path
+    tune_metrics_path: Path
+    error_slices_path: Path
+
+
+class EnergyModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_trips: int = Field(ge=1)
+    rate_kwh_per_km: float = Field(gt=0)
+    distance_km_mean: float = Field(gt=0)
+    distance_km_std: float = Field(gt=0)
+    duration_min_mean: float = Field(gt=0)
+    duration_min_std: float = Field(gt=0)
+    temperature_mean_c: float
+    temperature_std_c: float = Field(gt=0)
+    temperature_reference_c: float
+    cold_penalty_per_c: float = Field(ge=0)
+    noise_std_kwh: float = Field(ge=0)
+    n_estimators: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    min_samples_leaf: int = Field(ge=1)
+    search: HyperparameterGrid
+    cold_holdout_n_trips: int = Field(ge=1)
+    trips_path: Path
+    predictions_path: Path
+    metrics_path: Path
+    tune_metrics_path: Path
+    cold_metrics_path: Path
+
+
+class ModelsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    demand: DemandModelConfig
+    energy: EnergyModelConfig
+
+
 class DataConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -104,6 +168,8 @@ class DataConfig(BaseModel):
     processed_path: Path
     train_fraction: float = Field(gt=0, lt=1)
     val_fraction: float = Field(gt=0, lt=1)
+    covid_start: datetime
+    covid_end: datetime
 
     @field_validator("site")
     @classmethod
@@ -118,6 +184,9 @@ class DataConfig(BaseModel):
     def range_and_split(self) -> Self:
         if self.end <= self.start:
             msg = "data.end must be after data.start"
+            raise ValueError(msg)
+        if self.covid_end <= self.covid_start:
+            msg = "data.covid_end must be after data.covid_start"
             raise ValueError(msg)
         if self.train_fraction + self.val_fraction >= 1:
             msg = "data.train_fraction + data.val_fraction must be < 1"
@@ -150,6 +219,7 @@ class AppConfig(BaseModel):
     data: DataConfig
     experiment: ExperimentConfig
     stress: StressConfig
+    models: ModelsConfig
     logging: LoggingConfig = LoggingConfig()
 
     @model_validator(mode="after")
@@ -159,6 +229,15 @@ class AppConfig(BaseModel):
         if missing:
             names = ", ".join(sorted(p.value for p in missing))
             msg = f"experiment.policies must include MVP policies; missing: {names}"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def demand_horizon_matches_timestep(self) -> Self:
+        step = self.simulation.timestep_minutes
+        horizon = self.models.demand.horizon_minutes
+        if horizon % step != 0:
+            msg = "models.demand.horizon_minutes must be divisible by simulation.timestep_minutes"
             raise ValueError(msg)
         return self
 

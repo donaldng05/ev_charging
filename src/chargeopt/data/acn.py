@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
-from datetime import datetime
+from collections.abc import Callable, Iterable, Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -16,11 +16,53 @@ from chargeopt.data.validation import validate_sessions
 
 LOGGER = logging.getLogger(__name__)
 
+PULL_CHUNK_DAYS = 30
+SessionFetch = Callable[..., Iterable[dict[str, Any]]]
+
 
 def localize_naive(value: datetime, timezone_name: str) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=ZoneInfo(timezone_name))
     return value
+
+
+def iter_time_chunks(
+    start: datetime,
+    end: datetime,
+    *,
+    days: int = PULL_CHUNK_DAYS,
+) -> Iterator[tuple[datetime, datetime]]:
+    if days < 1:
+        msg = "chunk days must be >= 1"
+        raise ValueError(msg)
+    if end <= start:
+        msg = "end must be after start"
+        raise ValueError(msg)
+    cursor = start
+    step = timedelta(days=days)
+    while cursor < end:
+        chunk_end = min(cursor + step, end)
+        yield cursor, chunk_end
+        cursor = chunk_end
+
+
+def iter_chunked_sessions(
+    fetch: SessionFetch,
+    *,
+    site: str,
+    start: datetime,
+    end: datetime,
+    chunk_days: int = PULL_CHUNK_DAYS,
+) -> Iterator[dict[str, Any]]:
+    seen: set[str] = set()
+    for chunk_start, chunk_end in iter_time_chunks(start, end, days=chunk_days):
+        for raw in fetch(site=site, start=chunk_start, end=chunk_end):
+            session_id = str(raw.get("sessionID", ""))
+            if session_id and session_id in seen:
+                continue
+            if session_id:
+                seen.add(session_id)
+            yield raw
 
 
 def iter_acn_sessions(
@@ -33,7 +75,12 @@ def iter_acn_sessions(
     from acnportal.acndata import DataClient  # type: ignore[import-untyped]
 
     client = DataClient(token)
-    yield from client.get_sessions_by_time(site, start=start, end=end)
+
+    def fetch(*, site: str, start: datetime, end: datetime) -> Iterable[dict[str, Any]]:
+        sessions = client.get_sessions_by_time(site, start=start, end=end)
+        return cast(Iterable[dict[str, Any]], sessions)
+
+    yield from iter_chunked_sessions(fetch, site=site, start=start, end=end)
 
 
 def _as_datetime(value: Any) -> datetime | None:

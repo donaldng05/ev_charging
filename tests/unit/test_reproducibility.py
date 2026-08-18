@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 
+import numpy as np
 import pytest
 
 from chargeopt.config import PolicyName, load_config
@@ -17,6 +18,14 @@ def test_set_seed_is_reproducible() -> None:
     set_seed(42)
     second = [random.random() for _ in range(5)]
     assert first == second
+
+
+def test_set_seed_reproduces_numpy() -> None:
+    set_seed(42)
+    first = np.random.random(5)
+    set_seed(42)
+    second = np.random.random(5)
+    assert np.array_equal(first, second)
 
 
 def test_set_seed_rejects_negative() -> None:
