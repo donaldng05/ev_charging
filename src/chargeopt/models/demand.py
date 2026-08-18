@@ -7,16 +7,19 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 
+from chargeopt.features.demand import LAG_1W
 from chargeopt.models.baselines import (
     fit_historical_average,
     last_observation_forecast,
     predict_historical_average,
+    weekly_naive_forecast,
 )
 from chargeopt.models.metrics import metrics_from_predictions
 
 TARGET_COLUMN = "target_next_hour_energy_kwh"
 LAST_OBSERVATION = "last_observation"
 HISTORICAL_AVERAGE = "historical_average"
+WEEKLY_NAIVE = "weekly_naive"
 RANDOM_FOREST = "random_forest"
 
 DEMAND_FEATURE_COLUMNS: tuple[str, ...] = (
@@ -27,8 +30,10 @@ DEMAND_FEATURE_COLUMNS: tuple[str, ...] = (
     "lag_15m",
     "lag_1h",
     "lag_24h",
+    "lag_1w",
     "rolling_mean_1h",
     "rolling_mean_24h",
+    "rolling_mean_7d",
 )
 
 FORBIDDEN_FEATURE_COLUMNS: tuple[str, ...] = (
@@ -38,6 +43,7 @@ FORBIDDEN_FEATURE_COLUMNS: tuple[str, ...] = (
     "split",
     "timestamp",
     "site_id",
+    "era",
 )
 
 
@@ -125,16 +131,17 @@ def train_and_predict_demand(
         timestep_minutes=timestep_minutes,
     )
     n_bins = horizon_bins(horizon_minutes, timestep_minutes)
-    train = labeled.loc[labeled["split"] == "train"]
-    if train.empty:
-        msg = "no train rows remain after the next-hour split mask"
+    fit_frame = labeled.loc[labeled["split"].isin(["train", "val"])]
+    if fit_frame.empty:
+        msg = "no train/val rows remain after the next-hour split mask"
         raise ValueError(msg)
 
     last_obs = last_observation_forecast(labeled, n_bins)
-    historical = fit_historical_average(train, target_column=TARGET_COLUMN)
+    historical = fit_historical_average(fit_frame, target_column=TARGET_COLUMN)
     hist_pred = predict_historical_average(labeled, historical)
+    weekly = weekly_naive_forecast(labeled[TARGET_COLUMN], n_week_bins=LAG_1W)
     imputer, forest = fit_random_forest(
-        train,
+        fit_frame,
         feature_columns=DEMAND_FEATURE_COLUMNS,
         target_column=TARGET_COLUMN,
         n_estimators=n_estimators,
@@ -153,6 +160,7 @@ def train_and_predict_demand(
         [
             _demand_prediction_frame(labeled, last_obs.to_numpy(), LAST_OBSERVATION, seed),
             _demand_prediction_frame(labeled, hist_pred.to_numpy(), HISTORICAL_AVERAGE, seed),
+            _demand_prediction_frame(labeled, weekly.to_numpy(), WEEKLY_NAIVE, seed),
             _demand_prediction_frame(labeled, rf_pred, RANDOM_FOREST, seed),
         ],
         ignore_index=True,

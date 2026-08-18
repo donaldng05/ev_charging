@@ -7,7 +7,12 @@ import pandas as pd
 
 from chargeopt.config import load_config
 from chargeopt.features.energy import generate_synthetic_trips
-from chargeopt.models.energy import ENERGY_FEATURE_COLUMNS, physics_energy, train_and_predict_energy
+from chargeopt.models.energy import (
+    ENERGY_FEATURE_COLUMNS,
+    evaluate_energy_cold_holdout,
+    physics_energy,
+    train_and_predict_energy,
+)
 
 
 def _energy_spec(*, n_trips: int = 80):
@@ -33,6 +38,7 @@ def test_synthetic_trips_are_seeded_and_split_chronologically() -> None:
 
 def test_energy_features_are_distance_and_temperature() -> None:
     assert ENERGY_FEATURE_COLUMNS == ("distance_km", "temperature_c")
+    assert "duration_min" not in ENERGY_FEATURE_COLUMNS
 
 
 def test_energy_forest_fits_train_only_and_beats_physics_on_test() -> None:
@@ -55,3 +61,32 @@ def test_energy_forest_is_reproducible() -> None:
     rf = first.loc[first["model"] == "random_forest", "prediction"].to_numpy()
     rf_again = second.loc[second["model"] == "random_forest", "prediction"].to_numpy()
     np.testing.assert_allclose(rf, rf_again)
+
+
+def test_fixed_temperature_trips_are_constant() -> None:
+    spec = _energy_spec(n_trips=40)
+    trips = generate_synthetic_trips(
+        spec,
+        seed=42,
+        train_fraction=0.7,
+        val_fraction=0.15,
+        temperature_c=-10.0,
+    )
+    assert (trips["temperature_c"] == -10.0).all()
+
+
+def test_energy_cold_holdout_is_minus_ten() -> None:
+    spec = _energy_spec(n_trips=120)
+    trips = generate_synthetic_trips(spec, seed=42, train_fraction=0.7, val_fraction=0.15)
+    train = trips.loc[trips["split"] == "train"]
+    metrics = evaluate_energy_cold_holdout(
+        train,
+        spec=spec,
+        seed=42,
+        temperature_c=-10.0,
+        n_trips=40,
+        train_fraction=0.7,
+        val_fraction=0.15,
+    )
+    assert set(metrics["split"]) == {"cold"}
+    assert set(metrics["model"]) == {"physics", "random_forest"}

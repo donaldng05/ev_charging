@@ -40,11 +40,20 @@ uv run chargeopt data pull
 uv run chargeopt data features
 uv run chargeopt models demand
 uv run chargeopt models energy
+uv run chargeopt models tune demand
+uv run chargeopt models tune energy
 ```
 
 The experiment runner is a placeholder until M5. It already loads and validates `configs/default.yaml`, seeds the process, and prints a stable experiment id.
 
-`chargeopt models demand` reads the processed 15-minute demand CSV and writes gitignored prediction/metrics artifacts. `chargeopt models energy` generates synthetic trips, then writes physics and Random Forest energy predictions.
+`chargeopt models demand` reads the processed 15-minute demand CSV and writes
+gitignored prediction, metrics, and error-slice artifacts.
+`chargeopt models energy` generates synthetic trips, writes physics plus residual
+Random Forest predictions, and a −10°C holdout metrics CSV.
+`chargeopt models tune demand|energy` prints `best_params` JSON and writes fold
+metrics; it does not rewrite `configs/default.yaml`. Copy winners into the frozen
+`n_estimators` / `max_depth` / `min_samples_leaf` fields after a full-history
+demand pull.
 
 ## Docs
 

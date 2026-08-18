@@ -17,6 +17,14 @@ def last_observation_forecast(demand: pd.DataFrame, n_bins: int) -> pd.Series:
     return demand["rolling_mean_1h"].astype(float) * n_bins
 
 
+def weekly_naive_forecast(target: pd.Series, *, n_week_bins: int) -> pd.Series:
+    """Same next-hour window from one week earlier; uses only already-observed energy."""
+    if n_week_bins < 1:
+        msg = "n_week_bins must be >= 1"
+        raise ValueError(msg)
+    return target.astype(float).shift(n_week_bins)
+
+
 def fit_historical_average(train: pd.DataFrame, *, target_column: str) -> HistoricalAverage:
     means = train.groupby("hour", observed=True)[target_column].mean()
     by_hour = {int(cast(int, hour)): float(value) for hour, value in means.items()}

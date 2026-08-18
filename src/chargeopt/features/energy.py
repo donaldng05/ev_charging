@@ -28,6 +28,7 @@ def generate_synthetic_trips(
     seed: int,
     train_fraction: float,
     val_fraction: float,
+    temperature_c: float | None = None,
 ) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     n_trips = spec.n_trips
@@ -41,7 +42,10 @@ def generate_synthetic_trips(
         1.0,
         None,
     )
-    temperature = rng.normal(spec.temperature_mean_c, spec.temperature_std_c, n_trips)
+    if temperature_c is None:
+        temperature = rng.normal(spec.temperature_mean_c, spec.temperature_std_c, n_trips)
+    else:
+        temperature = np.full(n_trips, temperature_c)
     speed_kmh = distance / (duration / 60.0)
     cold_delta = np.maximum(spec.temperature_reference_c - temperature, 0.0)
     noise = rng.normal(0.0, spec.noise_std_kwh, n_trips)

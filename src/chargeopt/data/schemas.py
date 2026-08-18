@@ -58,11 +58,22 @@ class DemandInterval(BaseModel):
     lag_15m: float | None = None
     lag_1h: float | None = None
     lag_24h: float | None = None
+    lag_1w: float | None = None
     rolling_mean_1h: float | None = None
     rolling_mean_24h: float | None = None
+    rolling_mean_7d: float | None = None
+    era: Literal["pre_covid", "covid", "post_covid"]
     split: Literal["train", "val", "test"]
 
-    @field_validator("lag_15m", "lag_1h", "lag_24h", "rolling_mean_1h", "rolling_mean_24h")
+    @field_validator(
+        "lag_15m",
+        "lag_1h",
+        "lag_24h",
+        "lag_1w",
+        "rolling_mean_1h",
+        "rolling_mean_24h",
+        "rolling_mean_7d",
+    )
     @classmethod
     def lags_non_negative(cls, value: float | None) -> float | None:
         if value is not None and value < 0:

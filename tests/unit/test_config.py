@@ -35,8 +35,13 @@ def test_default_config_round_trip() -> None:
     assert config.data.train_fraction + config.data.val_fraction < 1
     assert config.models.demand.horizon_minutes == 60
     assert config.models.demand.n_estimators == 200
-    assert config.models.demand.max_depth == 8
-    assert config.data.end.isoformat() == "2018-10-31T00:00:00"
+    assert config.models.demand.max_depth == 12
+    assert config.models.demand.min_samples_leaf == 8
+    assert config.models.demand.n_splits == 4
+    assert config.data.start.isoformat() == "2018-05-01T00:00:00"
+    assert config.data.end.isoformat() == "2026-08-17T00:00:00"
+    assert config.data.covid_start.isoformat() == "2020-03-01T00:00:00"
+    assert config.data.covid_end.isoformat() == "2021-09-01T00:00:00"
     assert config.models.energy.n_trips == 2000
     assert config.models.energy.rate_kwh_per_km == 0.18
     assert config.models.energy.cold_penalty_per_c == 0.01

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -13,8 +14,35 @@ from chargeopt.data.validation import validate_sessions
 LAG_15M = 1
 LAG_1H = 4
 LAG_24H = 96
+LAG_1W = 96 * 7
 ROLL_1H = 4
 ROLL_24H = 96
+ROLL_7D = 96 * 7
+ERA_PRE_COVID = "pre_covid"
+ERA_COVID = "covid"
+ERA_POST_COVID = "post_covid"
+
+
+def era_label(
+    timestamp: datetime | pd.Timestamp,
+    covid_start: datetime,
+    covid_end: datetime,
+) -> str:
+    ts = _as_utc(timestamp)
+    start = _as_utc(covid_start)
+    end = _as_utc(covid_end)
+    if ts < start:
+        return ERA_PRE_COVID
+    if ts < end:
+        return ERA_COVID
+    return ERA_POST_COVID
+
+
+def _as_utc(value: datetime | pd.Timestamp) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
 
 
 def _charging_end(row: pd.Series) -> pd.Timestamp:
@@ -34,6 +62,8 @@ def build_demand_table(
     timezone_name: str,
     train_fraction: float,
     val_fraction: float,
+    covid_start: datetime,
+    covid_end: datetime,
 ) -> pd.DataFrame:
     if timestep_minutes != 15:
         msg = "MVP demand features require timestep_minutes=15"
@@ -87,14 +117,27 @@ def build_demand_table(
     frame["lag_15m"] = frame["energy_kwh"].shift(LAG_15M)
     frame["lag_1h"] = frame["energy_kwh"].shift(LAG_1H)
     frame["lag_24h"] = frame["energy_kwh"].shift(LAG_24H)
+    frame["lag_1w"] = frame["energy_kwh"].shift(LAG_1W)
     frame["rolling_mean_1h"] = shifted.rolling(ROLL_1H, min_periods=1).mean()
     frame["rolling_mean_24h"] = shifted.rolling(ROLL_24H, min_periods=1).mean()
+    frame["rolling_mean_7d"] = shifted.rolling(ROLL_7D, min_periods=1).mean()
+    frame["era"] = [
+        era_label(timestamp, covid_start, covid_end) for timestamp in frame["timestamp"]
+    ]
     frame["split"] = temporal_split_labels(len(frame), train_fraction, val_fraction)
 
     records: list[dict[str, Any]] = []
     raw_records = cast(list[dict[str, Any]], frame.to_dict(orient="records"))
     for record in raw_records:
-        for key in ("lag_15m", "lag_1h", "lag_24h", "rolling_mean_1h", "rolling_mean_24h"):
+        for key in (
+            "lag_15m",
+            "lag_1h",
+            "lag_24h",
+            "lag_1w",
+            "rolling_mean_1h",
+            "rolling_mean_24h",
+            "rolling_mean_7d",
+        ):
             value = record[key]
             if value is None or pd.isna(value):
                 record[key] = None

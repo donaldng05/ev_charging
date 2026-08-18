@@ -26,6 +26,16 @@ ENERGY_PREDICTION_COLUMNS: tuple[str, ...] = (
     "seed",
 )
 METRICS_COLUMNS: tuple[str, ...] = ("model", "split", "mae", "rmse", "n")
+ERROR_SLICE_COLUMNS: tuple[str, ...] = (
+    "model",
+    "split",
+    "hour",
+    "is_weekend",
+    "era",
+    "mae",
+    "rmse",
+    "n",
+)
 
 
 def write_demand_predictions(frame: pd.DataFrame, path: Path) -> None:
@@ -43,6 +53,15 @@ def write_metrics(frame: pd.DataFrame, path: Path) -> None:
         raise ValueError(msg)
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.loc[:, list(METRICS_COLUMNS)].to_csv(path, index=False)
+
+
+def write_error_slices(frame: pd.DataFrame, path: Path) -> None:
+    missing = [column for column in ERROR_SLICE_COLUMNS if column not in frame.columns]
+    if missing:
+        msg = f"error-slice table missing columns: {missing}"
+        raise ValueError(msg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.loc[:, list(ERROR_SLICE_COLUMNS)].to_csv(path, index=False)
 
 
 def load_demand_forecast(path: Path) -> pd.DataFrame:

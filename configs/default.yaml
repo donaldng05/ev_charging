@@ -9,12 +9,14 @@ simulation:
 data:
   site: caltech
   timezone: America/Los_Angeles
-  start: "2018-09-05T00:00:00"
-  end: "2018-10-31T00:00:00"
+  start: "2018-05-01T00:00:00"
+  end: "2026-08-17T00:00:00"
   snapshot_path: data/raw/acn_caltech_sessions.csv
   processed_path: data/processed/acn_caltech_demand_15min.csv
   train_fraction: 0.7
   val_fraction: 0.15
+  covid_start: "2020-03-01T00:00:00"
+  covid_end: "2021-09-01T00:00:00"
 
 experiment:
   policies:
@@ -39,10 +41,17 @@ models:
   demand:
     horizon_minutes: 60
     n_estimators: 200
-    max_depth: 8
-    min_samples_leaf: 2
+    max_depth: 12
+    min_samples_leaf: 8
+    n_splits: 4
+    search:
+      n_estimators: [100, 200]
+      max_depth: [6, 8, 12]
+      min_samples_leaf: [2, 8]
     predictions_path: data/processed/demand_predictions.csv
     metrics_path: data/processed/demand_metrics.csv
+    tune_metrics_path: data/processed/demand_tune.csv
+    error_slices_path: data/processed/demand_error_slices.csv
   energy:
     n_trips: 2000
     rate_kwh_per_km: 0.18
@@ -55,12 +64,19 @@ models:
     temperature_reference_c: 20.0
     cold_penalty_per_c: 0.01
     noise_std_kwh: 0.05
-    n_estimators: 200
-    max_depth: 8
+    n_estimators: 100
+    max_depth: 6
     min_samples_leaf: 2
+    search:
+      n_estimators: [100, 200]
+      max_depth: [6, 8, 12]
+      min_samples_leaf: [2, 8]
+    cold_holdout_n_trips: 200
     trips_path: data/processed/synthetic_trips.csv
     predictions_path: data/processed/energy_predictions.csv
     metrics_path: data/processed/energy_metrics.csv
+    tune_metrics_path: data/processed/energy_tune.csv
+    cold_metrics_path: data/processed/energy_cold_metrics.csv
 
 logging:
   level: INFO

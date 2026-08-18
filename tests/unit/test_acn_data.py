@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
 
-from chargeopt.data.acn import normalize_session, snapshot_sessions
+from chargeopt.data.acn import (
+    iter_chunked_sessions,
+    iter_time_chunks,
+    normalize_session,
+    snapshot_sessions,
+)
 from chargeopt.data.io import read_sessions_csv
 from chargeopt.data.schemas import ChargingSession, Station
 from chargeopt.data.validation import validate_sessions
@@ -100,3 +106,55 @@ def test_validate_sessions_rejects_duplicates() -> None:
     frame = frame.iloc[[0, 0]]
     with pytest.raises(ValueError, match="unique"):
         validate_sessions(frame)
+
+
+def test_iter_time_chunks_are_half_open_and_cover_the_window() -> None:
+    tz = ZoneInfo("America/Los_Angeles")
+    start = datetime(2018, 5, 1, tzinfo=tz)
+    end = datetime(2018, 7, 15, tzinfo=tz)
+    chunks = list(iter_time_chunks(start, end, days=30))
+    assert chunks[0] == (start, start + timedelta(days=30))
+    assert chunks[-1][1] == end
+    for index, (chunk_start, chunk_end) in enumerate(chunks[:-1]):
+        assert chunk_end == chunks[index + 1][0]
+        assert chunk_end > chunk_start
+    covered = sum((stop - begin).total_seconds() for begin, stop in chunks)
+    assert covered == (end - start).total_seconds()
+
+
+def test_iter_chunked_sessions_dedupes_boundary_ids() -> None:
+    calls: list[tuple[datetime, datetime]] = []
+
+    def fetch(*, site: str, start: datetime, end: datetime) -> list[dict[str, object]]:
+        assert site == "caltech"
+        calls.append((start, end))
+        shared = {
+            "sessionID": "shared-boundary",
+            "stationID": "2-39-79-383",
+            "spaceID": "CA-492",
+            "connectionTime": start,
+            "disconnectTime": start + timedelta(hours=1),
+            "kWhDelivered": 1.0,
+        }
+        unique = {
+            **shared,
+            "sessionID": f"unique-{start.isoformat()}",
+        }
+        return [shared, unique]
+
+    tz = ZoneInfo("America/Los_Angeles")
+    start = datetime(2018, 5, 1, tzinfo=tz)
+    end = datetime(2018, 6, 15, tzinfo=tz)
+    sessions = list(
+        iter_chunked_sessions(
+            fetch,
+            site="caltech",
+            start=start,
+            end=end,
+            chunk_days=30,
+        )
+    )
+    ids = [str(row["sessionID"]) for row in sessions]
+    assert ids.count("shared-boundary") == 1
+    assert len(ids) == len(set(ids))
+    assert len(calls) >= 2
