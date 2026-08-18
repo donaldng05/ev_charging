@@ -89,7 +89,7 @@ def build_demand_table(
     frame["lag_24h"] = frame["energy_kwh"].shift(LAG_24H)
     frame["rolling_mean_1h"] = shifted.rolling(ROLL_1H, min_periods=1).mean()
     frame["rolling_mean_24h"] = shifted.rolling(ROLL_24H, min_periods=1).mean()
-    frame["split"] = _temporal_split(len(frame), train_fraction, val_fraction)
+    frame["split"] = temporal_split_labels(len(frame), train_fraction, val_fraction)
 
     records: list[dict[str, Any]] = []
     raw_records = cast(list[dict[str, Any]], frame.to_dict(orient="records"))
@@ -103,7 +103,7 @@ def build_demand_table(
     return pd.DataFrame(validated)
 
 
-def _temporal_split(n: int, train_fraction: float, val_fraction: float) -> list[str]:
+def temporal_split_labels(n: int, train_fraction: float, val_fraction: float) -> list[str]:
     if n <= 0:
         return []
     if n == 1:

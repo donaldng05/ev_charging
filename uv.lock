@@ -231,10 +231,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "acnportal" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
+    { name = "scikit-learn" },
     { name = "setuptools" },
 ]
 
@@ -255,10 +257,12 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "acnportal", specifier = ">=0.3.3" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "pydantic", specifier = ">=2.11" },
     { name = "pydantic-settings", specifier = ">=2.10" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scikit-learn", specifier = ">=1.5" },
     { name = "setuptools", specifier = ">=70,<82" },
 ]
 

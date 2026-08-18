@@ -12,10 +12,12 @@ requires-python = ">=3.12"
 authors = [{ name = "Donald Nguyen" }]
 dependencies = [
     "acnportal>=0.3.3",
+    "numpy>=2.0",
     "pandas>=3.0.5",
     "pydantic>=2.11",
     "pydantic-settings>=2.10",
     "pyyaml>=6.0",
+    "scikit-learn>=1.5",
     "setuptools>=70,<82",
 ]
 
@@ -60,7 +62,6 @@ addopts = [
 source = ["chargeopt"]
 omit = [
     "src/chargeopt/__main__.py",
-    "src/chargeopt/models/*",
     "src/chargeopt/optimization/*",
     "src/chargeopt/simulation/*",
     "src/chargeopt/evaluation/*",
@@ -78,6 +79,10 @@ python_version = "3.12"
 strict = true
 files = ["src"]
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
 
 [tool.pydantic-mypy]
 init_forbid_extra = true

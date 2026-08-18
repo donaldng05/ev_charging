@@ -38,9 +38,13 @@ uv run chargeopt --help
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
 uv run chargeopt data pull
 uv run chargeopt data features
+uv run chargeopt models demand
+uv run chargeopt models energy
 ```
 
 The experiment runner is a placeholder until M5. It already loads and validates `configs/default.yaml`, seeds the process, and prints a stable experiment id.
+
+`chargeopt models demand` reads the processed 15-minute demand CSV and writes gitignored prediction/metrics artifacts. `chargeopt models energy` generates synthetic trips, then writes physics and Random Forest energy predictions.
 
 ## Docs
 

@@ -67,10 +67,57 @@ Canonical snapshot: `data/raw/acn_caltech_sessions.csv` (gitignored). Not pickle
 
 Holidays are out of MVP 1.
 
+## Demand forecast target
+
+The stored demand CSV does not include a forecast column. At train time M2 derives
+`target_next_hour_energy_kwh` as the sum of `energy_kwh` over the next
+`models.demand.horizon_minutes` (60 minutes → four 15-minute bins). Rows whose
+horizon crosses a `split` boundary are dropped so train labels never use val/test
+energy.
+
+Demand features for the learned model are calendar fields plus lags and rolling
+means already in the table. Current-bin `energy_kwh` and `n_arrivals` are not
+features.
+
+## Demand prediction CSV
+
+Canonical artifact: `data/processed/demand_predictions.csv` (gitignored).
+
+| Column | Notes |
+| --- | --- |
+| `timestamp` | Forecast issue time (bin start, UTC) |
+| `split` | `train` / `val` / `test` of that timestamp |
+| `target` | Next-hour energy (kWh) |
+| `prediction` | Model output |
+| `model` | `last_observation`, `historical_average`, or `random_forest` |
+| `seed` | Config/CLI seed |
+
+## Synthetic trips
+
+Canonical artifact: `data/processed/synthetic_trips.csv` (gitignored). Generated
+with the experiment seed; not ACN-Data.
+
+| Column | Notes |
+| --- | --- |
+| `trip_id` | `trip-00000` … sequential generation order |
+| `distance_km` | Sampled, clipped to a positive minimum |
+| `duration_min` | Sampled, clipped to a positive minimum |
+| `speed_kmh` | `distance_km / (duration_min / 60)` |
+| `temperature_c` | Synthetic ambient temperature |
+| `energy_kwh` | Rate × distance × cold penalty + noise |
+| `split` | Chronological generation-index split (same fractions as demand) |
+
+Physics baseline predicts `rate_kwh_per_km * distance_km`. The Random Forest uses
+`distance_km`, `duration_min`, and `temperature_c`. Energy predictions use
+`trip_id` in place of `timestamp` with the same `split`, `target`, `prediction`,
+`model`, `seed` contract (`model` is `physics` or `random_forest`).
+
 ## Temporal split
 
 Never randomly shuffle sessions or demand intervals. Split the sorted 15-minute timeline by fraction (`train_fraction`, `val_fraction` in config; test is the remainder). Calendar cut dates are **not** frozen until a longer snapshot exists; the rule is time-order, not a specific year.
 
 ## What is not in this dataset
 
-SOC, battery capacity, current location, next trip, trip energy, electricity price, weather, and lat/lon between independent public stations.
+SOC, battery capacity, current location, next trip, electricity price, and
+lat/lon between independent public stations. Synthetic trips and temperatures
+are generated in M2; they are not observed ACN fields.

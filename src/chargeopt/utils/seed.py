@@ -5,14 +5,14 @@ from __future__ import annotations
 import os
 import random
 
+import numpy as np
+
 
 def set_seed(seed: int) -> None:
-    """Seed the standard library RNG (and PYTHONHASHSEED).
-
-    NumPy / XGBoost seeding is added when those dependencies land in M2-M3.
-    """
+    """Seed the standard library and NumPy RNGs (and PYTHONHASHSEED)."""
     if seed < 0:
         msg = "seed must be non-negative"
         raise ValueError(msg)
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)

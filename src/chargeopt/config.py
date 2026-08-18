@@ -93,6 +93,46 @@ class StressConfig(BaseModel):
     station_availability: float = Field(gt=0, le=1)
 
 
+class DemandModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizon_minutes: int = Field(gt=0)
+    n_estimators: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    min_samples_leaf: int = Field(ge=1)
+    predictions_path: Path
+    metrics_path: Path
+
+
+class EnergyModelConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_trips: int = Field(ge=1)
+    rate_kwh_per_km: float = Field(gt=0)
+    distance_km_mean: float = Field(gt=0)
+    distance_km_std: float = Field(gt=0)
+    duration_min_mean: float = Field(gt=0)
+    duration_min_std: float = Field(gt=0)
+    temperature_mean_c: float
+    temperature_std_c: float = Field(gt=0)
+    temperature_reference_c: float
+    cold_penalty_per_c: float = Field(ge=0)
+    noise_std_kwh: float = Field(ge=0)
+    n_estimators: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    min_samples_leaf: int = Field(ge=1)
+    trips_path: Path
+    predictions_path: Path
+    metrics_path: Path
+
+
+class ModelsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    demand: DemandModelConfig
+    energy: EnergyModelConfig
+
+
 class DataConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -150,6 +190,7 @@ class AppConfig(BaseModel):
     data: DataConfig
     experiment: ExperimentConfig
     stress: StressConfig
+    models: ModelsConfig
     logging: LoggingConfig = LoggingConfig()
 
     @model_validator(mode="after")
@@ -159,6 +200,15 @@ class AppConfig(BaseModel):
         if missing:
             names = ", ".join(sorted(p.value for p in missing))
             msg = f"experiment.policies must include MVP policies; missing: {names}"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def demand_horizon_matches_timestep(self) -> Self:
+        step = self.simulation.timestep_minutes
+        horizon = self.models.demand.horizon_minutes
+        if horizon % step != 0:
+            msg = "models.demand.horizon_minutes must be divisible by simulation.timestep_minutes"
             raise ValueError(msg)
         return self
 

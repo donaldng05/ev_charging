@@ -35,5 +35,32 @@ stress:
   temperature_c: -10.0
   station_availability: 0.8
 
+models:
+  demand:
+    horizon_minutes: 60
+    n_estimators: 200
+    max_depth: 8
+    min_samples_leaf: 2
+    predictions_path: data/processed/demand_predictions.csv
+    metrics_path: data/processed/demand_metrics.csv
+  energy:
+    n_trips: 2000
+    rate_kwh_per_km: 0.18
+    distance_km_mean: 12.0
+    distance_km_std: 6.0
+    duration_min_mean: 25.0
+    duration_min_std: 10.0
+    temperature_mean_c: 20.0
+    temperature_std_c: 8.0
+    temperature_reference_c: 20.0
+    cold_penalty_per_c: 0.01
+    noise_std_kwh: 0.5
+    n_estimators: 200
+    max_depth: 8
+    min_samples_leaf: 2
+    trips_path: data/processed/synthetic_trips.csv
+    predictions_path: data/processed/energy_predictions.csv
+    metrics_path: data/processed/energy_metrics.csv
+
 logging:
   level: INFO

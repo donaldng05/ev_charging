@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from chargeopt.data.io import read_sessions_csv
-from chargeopt.features.demand import _temporal_split, build_demand_table
+from chargeopt.features.demand import build_demand_table, temporal_split_labels
 
 FIXTURE = Path("tests/fixtures/acn_sessions.csv")
 
@@ -79,6 +79,6 @@ def test_demand_table_rejects_30_minute_bins() -> None:
 
 
 def test_temporal_split_handles_small_inputs() -> None:
-    assert _temporal_split(0, 0.7, 0.15) == []
-    assert _temporal_split(1, 0.7, 0.15) == ["test"]
-    assert _temporal_split(2, 0.7, 0.15) == ["train", "test"]
+    assert temporal_split_labels(0, 0.7, 0.15) == []
+    assert temporal_split_labels(1, 0.7, 0.15) == ["test"]
+    assert temporal_split_labels(2, 0.7, 0.15) == ["train", "test"]

@@ -41,3 +41,15 @@ def read_demand_csv(path: Path) -> pd.DataFrame:
     if "timestamp" in frame.columns:
         frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
     return frame
+
+
+def write_trips_csv(frame: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_csv(path, index=False)
+
+
+def read_trips_csv(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        msg = f"trip CSV not found: {path}"
+        raise FileNotFoundError(msg)
+    return pd.read_csv(path)

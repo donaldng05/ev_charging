@@ -36,7 +36,7 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC |
 | `chargeopt.optimization` | M4 | Nearest / cheapest / ML-informed policies |
 | `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
-| `chargeopt.cli` | M0 / M1 / M5 | `chargeopt experiment ...` and `chargeopt data pull|features` |
+| `chargeopt.cli` | M0 / M1 / M2 / M5 | `chargeopt experiment`, `data pull|features`, `models demand|energy` |
 
 Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not hardcode fleet size, timestep, or horizon.
 

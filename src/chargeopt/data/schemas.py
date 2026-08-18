@@ -69,3 +69,37 @@ class DemandInterval(BaseModel):
             msg = "lag and rolling features must be >= 0"
             raise ValueError(msg)
         return value
+
+
+class SyntheticTrip(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trip_id: str
+    distance_km: float = Field(gt=0)
+    duration_min: float = Field(gt=0)
+    speed_kmh: float = Field(gt=0)
+    temperature_c: float
+    energy_kwh: float = Field(ge=0)
+    split: Literal["train", "val", "test"]
+
+
+class DemandPrediction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timestamp: datetime
+    split: Literal["train", "val", "test"]
+    target: float
+    prediction: float
+    model: str
+    seed: int = Field(ge=0)
+
+
+class EnergyPrediction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trip_id: str
+    split: Literal["train", "val", "test"]
+    target: float
+    prediction: float
+    model: str
+    seed: int = Field(ge=0)

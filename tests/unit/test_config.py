@@ -33,6 +33,12 @@ def test_default_config_round_trip() -> None:
     assert config.stress.station_availability == 0.8
     assert config.data.site == "caltech"
     assert config.data.train_fraction + config.data.val_fraction < 1
+    assert config.models.demand.horizon_minutes == 60
+    assert config.models.demand.n_estimators == 200
+    assert config.models.demand.max_depth == 8
+    assert config.models.energy.n_trips == 2000
+    assert config.models.energy.rate_kwh_per_km == 0.18
+    assert config.models.energy.cold_penalty_per_c == 0.01
 
 
 def test_load_config_from_explicit_path(tmp_path: Path) -> None:
@@ -122,3 +128,10 @@ def test_default_config_path_exists() -> None:
 def test_resolve_falls_back_to_repo_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     assert resolve_config_path(None) == default_config_path()
+
+
+def test_demand_horizon_must_divide_timestep() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["models"]["demand"]["horizon_minutes"] = 50
+    with pytest.raises(ValidationError, match="horizon_minutes"):
+        AppConfig.model_validate(payload)
