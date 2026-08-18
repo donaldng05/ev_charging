@@ -36,9 +36,11 @@ def test_default_config_round_trip() -> None:
     assert config.models.demand.horizon_minutes == 60
     assert config.models.demand.n_estimators == 200
     assert config.models.demand.max_depth == 8
+    assert config.data.end.isoformat() == "2018-10-31T00:00:00"
     assert config.models.energy.n_trips == 2000
     assert config.models.energy.rate_kwh_per_km == 0.18
     assert config.models.energy.cold_penalty_per_c == 0.01
+    assert config.models.energy.noise_std_kwh == 0.05
 
 
 def test_load_config_from_explicit_path(tmp_path: Path) -> None:

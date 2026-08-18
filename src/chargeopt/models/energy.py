@@ -13,7 +13,6 @@ PHYSICS = "physics"
 RANDOM_FOREST = "random_forest"
 ENERGY_FEATURE_COLUMNS: tuple[str, ...] = (
     "distance_km",
-    "duration_min",
     "temperature_c",
 )
 

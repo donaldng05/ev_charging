@@ -31,8 +31,8 @@ def test_synthetic_trips_are_seeded_and_split_chronologically() -> None:
     assert splits == sorted(splits, key=["train", "val", "test"].index)
 
 
-def test_energy_features_are_distance_duration_and_temperature() -> None:
-    assert ENERGY_FEATURE_COLUMNS == ("distance_km", "duration_min", "temperature_c")
+def test_energy_features_are_distance_and_temperature() -> None:
+    assert ENERGY_FEATURE_COLUMNS == ("distance_km", "temperature_c")
 
 
 def test_energy_forest_fits_train_only_and_beats_physics_on_test() -> None:

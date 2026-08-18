@@ -10,7 +10,7 @@ data:
   site: caltech
   timezone: America/Los_Angeles
   start: "2018-09-05T00:00:00"
-  end: "2018-09-12T00:00:00"
+  end: "2018-10-31T00:00:00"
   snapshot_path: data/raw/acn_caltech_sessions.csv
   processed_path: data/processed/acn_caltech_demand_15min.csv
   train_fraction: 0.7
@@ -54,7 +54,7 @@ models:
     temperature_std_c: 8.0
     temperature_reference_c: 20.0
     cold_penalty_per_c: 0.01
-    noise_std_kwh: 0.5
+    noise_std_kwh: 0.05
     n_estimators: 200
     max_depth: 8
     min_samples_leaf: 2

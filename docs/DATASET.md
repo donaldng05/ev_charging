@@ -18,7 +18,10 @@ Caltech is **one site with many EVSEs**. `stationID` / `spaceID` are garage-scal
 
 ## ACN-Data raw fields (observed)
 
-Pulled via `DataClient.get_sessions_by_time("caltech", ...)` with `DEMO_TOKEN` (window 2018-09-05 to 2018-09-06). Keys:
+Pulled via `DataClient.get_sessions_by_time("caltech", ...)` for the ingest
+window in `configs/default.yaml` (`2018-09-05` to `2018-10-31`). A registered
+`CHARGEOPT_ACN_TOKEN` is required for this range; `DEMO_TOKEN` may only cover a
+short demo week. Observed keys:
 
 | Field | Example / notes |
 | --- | --- |
@@ -108,7 +111,8 @@ with the experiment seed; not ACN-Data.
 | `split` | Chronological generation-index split (same fractions as demand) |
 
 Physics baseline predicts `rate_kwh_per_km * distance_km`. The Random Forest uses
-`distance_km`, `duration_min`, and `temperature_c`. Energy predictions use
+`distance_km` and `temperature_c` only (`duration_min` is sampled but is not in
+the generative formula). Energy predictions use
 `trip_id` in place of `timestamp` with the same `split`, `target`, `prediction`,
 `model`, `seed` contract (`model` is `physics` or `random_forest`).
 
