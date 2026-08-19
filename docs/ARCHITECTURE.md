@@ -57,9 +57,11 @@ applies deterministic trip consumption, FIFO station queues, charger capacity,
 constant-rate charging, and SOC bounds for 96 ticks.
 
 The M3 station chooser sends each EV to its assigned home station through a
-small protocol boundary. M4 replaces that chooser with nearest, cheapest, and
-ML-informed policies without changing simulation mechanics. ACN EVSE identifiers
-are never used as geo-distributed simulator station identifiers.
+small protocol boundary. `--all-seeds` also runs a concentrated-routing
+sensitivity probe that sends every vehicle to `sim-00`; that probe is not an
+M4 policy. M4 replaces the chooser with nearest, cheapest, and ML-informed
+policies without changing simulation mechanics. ACN EVSE identifiers are never
+used as geo-distributed simulator station identifiers.
 
 ## Out of MVP 1
 

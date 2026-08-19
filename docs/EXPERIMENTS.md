@@ -54,6 +54,16 @@ home-station wait. A concentrated-routing sensitivity probe must add at least
 The first candidate passing these policy-neutral checks is retained. The
 calibration does not inspect nearest, cheapest, or ML-informed rankings.
 
+```text
+uv run chargeopt simulate --config configs/default.yaml --all-seeds
+```
+
+That command writes gitignored `data/processed/sim_metrics.csv` (home-station
+rows for every configured seed, plus one concentrated-routing probe on the
+first seed) and prints `gate_passed` with median utilization, seeds with
+queues, mean wait, probe wait delta, and probe peak queue. Fixture tests do
+not require a passing gate; freeze numbers from a local Caltech snapshot run.
+
 ## Stress scenario
 
 After the IID comparison, take the same policies under:

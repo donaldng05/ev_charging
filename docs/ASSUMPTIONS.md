@@ -16,8 +16,10 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
   and leave charging at a 90% target.
 - Each vehicle has two seeded trips per day and an evenly assigned synthetic
   home station. Two trips is the first policy-neutral candidate that passed the
-  frozen normal-scenario calibration gate. M3 always returns vehicles home;
-  station-selection policies land in M4.
+  frozen normal-scenario calibration gate. M3 home routing always returns
+  vehicles to that assigned station. The concentrated-routing probe is an M3
+  sensitivity check, not a station-selection policy; nearest, cheapest, and
+  ML-informed policies land in M4.
 - Synthetic locations occupy a 12 km square and station prices span
   $0.20–$0.45/kWh.
 

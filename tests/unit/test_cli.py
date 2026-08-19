@@ -263,6 +263,64 @@ def test_simulate_writes_structured_artifacts(
         "queued_this_tick",
         "stranded_this_tick",
     } <= run_columns
+    metrics_header = set(metrics.read_text(encoding="utf-8").splitlines()[0].split(","))
+    assert {"routing", "peak_queue"} <= metrics_header
+
+
+def test_simulate_all_seeds_writes_home_and_probe_metrics(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "simulation.yaml"
+    stations = tmp_path / "stations.csv"
+    run = tmp_path / "run.csv"
+    station_ticks = tmp_path / "station_ticks.csv"
+    metrics = tmp_path / "metrics.csv"
+    snapshot = Path("tests/fixtures/acn_sessions.csv").resolve()
+    patched = (
+        source.replace(
+            "snapshot_path: data/raw/acn_caltech_sessions.csv",
+            f"snapshot_path: {snapshot.as_posix()}",
+        )
+        .replace(
+            "stations_path: data/processed/sim_stations.csv",
+            f"stations_path: {stations.as_posix()}",
+        )
+        .replace(
+            "run_path: data/processed/sim_run.csv",
+            f"run_path: {run.as_posix()}",
+        )
+        .replace(
+            "station_ticks_path: data/processed/sim_station_ticks.csv",
+            f"station_ticks_path: {station_ticks.as_posix()}",
+        )
+        .replace(
+            "metrics_path: data/processed/sim_metrics.csv",
+            f"metrics_path: {metrics.as_posix()}",
+        )
+        .replace(
+            "seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]",
+            "seeds: [42, 43]",
+        )
+    )
+    config_path.write_text(patched, encoding="utf-8")
+
+    assert main(["simulate", "--config", str(config_path), "--all-seeds"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert "gate_passed" in payload
+    assert payload["home"]["n_seeds"] == 2
+    assert payload["probe"]["seed"] == 42
+    assert all(path.is_file() for path in (stations, run, station_ticks, metrics))
+    header = metrics.read_text(encoding="utf-8").splitlines()[0].split(",")
+    assert "routing" in header
+    assert "peak_queue" in header
+    rows = metrics.read_text(encoding="utf-8").splitlines()[1:]
+    assert len(rows) == 3
+    routings = [row.split(",")[header.index("routing")] for row in rows]
+    assert routings == ["home", "home", "concentrated"]
 
 
 def test_models_tune_requires_target() -> None:

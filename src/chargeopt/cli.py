@@ -48,6 +48,7 @@ from chargeopt.models.tune import (
 )
 from chargeopt.simulation.engine import run_simulation
 from chargeopt.simulation.io import write_simulation_artifacts
+from chargeopt.simulation.report import run_calibration
 from chargeopt.utils.experiment import experiment_id, git_sha
 from chargeopt.utils.log import configure_logging
 from chargeopt.utils.seed import set_seed
@@ -129,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run one seeded 24-hour synthetic fleet simulation.",
     )
     _add_config_and_seed(simulate)
+    simulate.add_argument(
+        "--all-seeds",
+        action="store_true",
+        help="Run every experiment seed under home routing plus the concentrated-routing probe.",
+    )
 
     data = subparsers.add_parser("data", help="ACN-Data ingest and demand features.")
     data_sub = data.add_subparsers(dest="data_command")
@@ -219,14 +225,54 @@ def run_experiment(args: argparse.Namespace) -> int:
 
 def run_simulate(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
-    seed = _resolve_seed(args, config)
-    set_seed(seed)
     sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
-    result = run_simulation(config, sessions=sessions, seed=seed)
     stations_path = resolve_data_path(config.simulation.stations_path)
     run_path = resolve_data_path(config.simulation.run_path)
     station_ticks_path = resolve_data_path(config.simulation.station_ticks_path)
     metrics_path = resolve_data_path(config.simulation.metrics_path)
+    if args.all_seeds:
+        report = run_calibration(config, sessions)
+        write_simulation_artifacts(
+            report.home_result,
+            stations_path=stations_path,
+            run_path=run_path,
+            station_ticks_path=station_ticks_path,
+            metrics_path=metrics_path,
+            metrics=report.metrics,
+        )
+        probe = report.probe_row
+        payload = {
+            "status": "ok",
+            "gate_passed": report.gate["gate_passed"],
+            "n_ticks": config.simulation.steps_per_day,
+            "n_vehicles": config.simulation.fleet_size,
+            "home": {
+                "n_seeds": len(config.experiment.seeds),
+                "median_utilization": report.gate["median_utilization"],
+                "mean_wait_minutes": report.gate["mean_wait_minutes"],
+                "soc_violations": report.gate["soc_violations"],
+                "seeds_with_queue": report.gate["seeds_with_queue"],
+            },
+            "probe": {
+                "seed": probe["seed"],
+                "avg_wait_minutes": probe["avg_wait_minutes"],
+                "peak_queue": probe["peak_queue"],
+                "wait_delta": report.gate["probe_wait_delta"],
+            },
+            "paths": {
+                "stations": str(stations_path),
+                "run": str(run_path),
+                "station_ticks": str(station_ticks_path),
+                "metrics": str(metrics_path),
+            },
+        }
+        json.dump(payload, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
+    seed = _resolve_seed(args, config)
+    set_seed(seed)
+    result = run_simulation(config, sessions=sessions, seed=seed)
     write_simulation_artifacts(
         result,
         stations_path=stations_path,

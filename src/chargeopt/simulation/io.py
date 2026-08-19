@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from chargeopt.simulation.engine import SimResult
+from chargeopt.simulation.report import HOME_ROUTING, metrics_row
 
 STATION_COLUMNS: tuple[str, ...] = (
     "station_id",
@@ -39,6 +40,8 @@ STATION_TICK_COLUMNS: tuple[str, ...] = (
 )
 METRIC_COLUMNS: tuple[str, ...] = (
     "seed",
+    "routing",
+    "peak_queue",
     "energy_cost",
     "avg_wait_minutes",
     "soc_violations",
@@ -55,16 +58,14 @@ def write_simulation_artifacts(
     run_path: Path,
     station_ticks_path: Path,
     metrics_path: Path,
+    metrics: pd.DataFrame | None = None,
 ) -> None:
     """Write canonical station, vehicle-tick, station-tick, and metric CSVs."""
     _write(result.stations, stations_path, STATION_COLUMNS)
     _write(result.vehicle_ticks, run_path, VEHICLE_TICK_COLUMNS)
     _write(result.station_ticks, station_ticks_path, STATION_TICK_COLUMNS)
-    _write(
-        pd.DataFrame([result.metrics.model_dump()]),
-        metrics_path,
-        METRIC_COLUMNS,
-    )
+    frame = metrics if metrics is not None else pd.DataFrame([metrics_row(result, HOME_ROUTING)])
+    _write(frame, metrics_path, METRIC_COLUMNS)
 
 
 def read_sim_stations(path: Path) -> pd.DataFrame:
