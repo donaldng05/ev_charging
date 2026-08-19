@@ -36,7 +36,7 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC |
 | `chargeopt.optimization` | M4 | Nearest / cheapest / ML-informed policies |
 | `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
-| `chargeopt.cli` | M0 / M1 / M2 / M5 | `chargeopt experiment`, `data pull|features`, `models demand|energy|tune` |
+| `chargeopt.cli` | M0–M3 / M5 | `chargeopt simulate`, `experiment`, `data pull|features`, `models demand|energy|tune` |
 
 Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not hardcode fleet size, timestep, or horizon.
 
@@ -47,6 +47,19 @@ Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not
 - 1 discrete-time simulator (15-minute ticks, 24-hour horizon)
 - 6 metrics: energy cost, wait, SOC violations, energy usage, station utilization, idle time
 - 1 stress scenario: 1.5× demand, −10°C, 80% station availability
+
+## M3 simulator flow
+
+`chargeopt simulate` calibrates an arrival-hour distribution and mean connected
+duration/energy from the normalized ACN session CSV. It then creates synthetic
+city stations, generic EVs, and seeded daily itineraries. The 15-minute engine
+applies deterministic trip consumption, FIFO station queues, charger capacity,
+constant-rate charging, and SOC bounds for 96 ticks.
+
+The M3 station chooser sends each EV to its assigned home station through a
+small protocol boundary. M4 replaces that chooser with nearest, cheapest, and
+ML-informed policies without changing simulation mechanics. ACN EVSE identifiers
+are never used as geo-distributed simulator station identifiers.
 
 ## Out of MVP 1
 

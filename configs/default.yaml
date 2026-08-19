@@ -5,6 +5,20 @@ simulation:
   timestep_minutes: 15
   horizon_hours: 24
   charger_power_kw: 150.0
+  battery_kwh: 60.0
+  soc_initial: 0.7
+  soc_min: 0.1
+  soc_charge_target: 0.9
+  trips_per_vehicle: 2
+  metro_span_km: 12.0
+  price_per_kwh_min: 0.20
+  price_per_kwh_max: 0.45
+  n_chargers_min: 1
+  start_day: "2018-09-05"
+  stations_path: data/processed/sim_stations.csv
+  run_path: data/processed/sim_run.csv
+  station_ticks_path: data/processed/sim_station_ticks.csv
+  metrics_path: data/processed/sim_metrics.csv
 
 data:
   site: caltech

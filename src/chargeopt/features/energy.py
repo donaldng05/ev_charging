@@ -22,6 +22,17 @@ TRIP_COLUMNS: tuple[str, ...] = (
 )
 
 
+def generative_trip_energy(
+    distance_km: np.ndarray,
+    temperature_c: np.ndarray,
+    spec: EnergyModelConfig,
+) -> np.ndarray:
+    """Return the noise-free M2 generative energy relationship."""
+    cold_delta = np.maximum(spec.temperature_reference_c - temperature_c, 0.0)
+    energy = spec.rate_kwh_per_km * distance_km * (1.0 + spec.cold_penalty_per_c * cold_delta)
+    return np.asarray(np.maximum(energy, 0.0), dtype=float)
+
+
 def generate_synthetic_trips(
     spec: EnergyModelConfig,
     *,
@@ -47,9 +58,8 @@ def generate_synthetic_trips(
     else:
         temperature = np.full(n_trips, temperature_c)
     speed_kmh = distance / (duration / 60.0)
-    cold_delta = np.maximum(spec.temperature_reference_c - temperature, 0.0)
     noise = rng.normal(0.0, spec.noise_std_kwh, n_trips)
-    energy = spec.rate_kwh_per_km * distance * (1.0 + spec.cold_penalty_per_c * cold_delta) + noise
+    energy = generative_trip_energy(distance, temperature, spec) + noise
     energy = np.maximum(energy, 0.0)
     splits = temporal_split_labels(n_trips, train_fraction, val_fraction)
     frame = pd.DataFrame(

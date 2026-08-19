@@ -125,6 +125,31 @@ with the same `split`, `target`, `prediction`, `model`, `seed` contract
 (`model` is `physics` plus the five learners). `chargeopt models energy` also writes
 a dedicated −10°C holdout metrics CSV (`models.energy.cold_metrics_path`).
 
+## Synthetic simulator artifacts
+
+`chargeopt simulate` reads the normalized session snapshot only to calibrate:
+
+- a 24-bin arrival-hour probability distribution,
+- mean delivered energy for charging-service-time capacity sizing, and
+- mean connected duration as a diagnostic only.
+
+The simulation creates `sim-00` … `sim-09`; these identifiers never correspond
+to ACN `stationID` values. Locations, prices, batteries, SOC, and fleet
+itineraries remain synthetic. The canonical gitignored artifacts are:
+
+| Path | Grain | Key columns |
+| --- | --- | --- |
+| `data/processed/sim_stations.csv` | one row per synthetic station | `station_id`, `x_km`, `y_km`, `n_chargers`, `power_kw`, `price_per_kwh` |
+| `data/processed/sim_run.csv` | vehicle × 15-minute tick | state columns plus `drove_this_tick`, `charged_this_tick`, `queued_this_tick`, `stranded_this_tick` |
+| `data/processed/sim_station_ticks.csv` | station × tick | `tick`, `timestamp`, `station_id`, `occupancy`, `queue_len`, `energy_delivered_kwh` |
+| `data/processed/sim_metrics.csv` | one row per seed | `seed` plus the six metrics in `docs/EXPERIMENTS.md` |
+
+Tick activity columns describe work performed during the interval even when
+the end-of-tick `status` has already changed. Metrics are auditable from the
+artifacts: queue activity reconstructs average wait, queued plus stranded
+activity reconstructs `vehicle_idle_minutes`, and station occupancy
+reconstructs utilization.
+
 ## Temporal split
 
 Never randomly shuffle sessions or demand intervals. Split the sorted 15-minute

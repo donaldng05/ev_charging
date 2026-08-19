@@ -46,6 +46,8 @@ from chargeopt.models.tune import (
     tune_demand_learners,
     tune_energy_learners,
 )
+from chargeopt.simulation.engine import run_simulation
+from chargeopt.simulation.io import write_simulation_artifacts
 from chargeopt.utils.experiment import experiment_id, git_sha
 from chargeopt.utils.log import configure_logging
 from chargeopt.utils.seed import set_seed
@@ -121,6 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Random seed (default: first seed in the config).",
     )
+
+    simulate = subparsers.add_parser(
+        "simulate",
+        help="Run one seeded 24-hour synthetic fleet simulation.",
+    )
+    _add_config_and_seed(simulate)
 
     data = subparsers.add_parser("data", help="ACN-Data ingest and demand features.")
     data_sub = data.add_subparsers(dest="data_command")
@@ -203,6 +211,41 @@ def run_experiment(args: argparse.Namespace) -> int:
         "policy": args.policy.value,
         "seed": seed,
         "config": config.model_dump(mode="json"),
+    }
+    json.dump(payload, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def run_simulate(args: argparse.Namespace) -> int:
+    _, config = _load_from_args(args)
+    seed = _resolve_seed(args, config)
+    set_seed(seed)
+    sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
+    result = run_simulation(config, sessions=sessions, seed=seed)
+    stations_path = resolve_data_path(config.simulation.stations_path)
+    run_path = resolve_data_path(config.simulation.run_path)
+    station_ticks_path = resolve_data_path(config.simulation.station_ticks_path)
+    metrics_path = resolve_data_path(config.simulation.metrics_path)
+    write_simulation_artifacts(
+        result,
+        stations_path=stations_path,
+        run_path=run_path,
+        station_ticks_path=station_ticks_path,
+        metrics_path=metrics_path,
+    )
+    payload = {
+        "status": "ok",
+        "seed": seed,
+        "n_ticks": config.simulation.steps_per_day,
+        "n_vehicles": config.simulation.fleet_size,
+        "metrics": result.metrics.model_dump(),
+        "paths": {
+            "stations": str(stations_path),
+            "run": str(run_path),
+            "station_ticks": str(station_ticks_path),
+            "metrics": str(metrics_path),
+        },
     }
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
@@ -440,6 +483,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "experiment":
         return run_experiment(args)
+    if args.command == "simulate":
+        return run_simulate(args)
     if args.command == "data":
         if args.data_command == "pull":
             return run_data_pull(args)

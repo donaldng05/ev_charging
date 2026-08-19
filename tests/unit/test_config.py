@@ -25,6 +25,21 @@ def test_default_config_round_trip() -> None:
     assert config.simulation.timestep_minutes == 15
     assert config.simulation.horizon_hours == 24
     assert config.simulation.steps_per_day == 96
+    assert config.simulation.charger_power_kw == 150.0
+    assert config.simulation.battery_kwh == 60.0
+    assert config.simulation.soc_initial == 0.7
+    assert config.simulation.soc_min == 0.1
+    assert config.simulation.soc_charge_target == 0.9
+    assert config.simulation.trips_per_vehicle == 2
+    assert config.simulation.metro_span_km == 12.0
+    assert config.simulation.price_per_kwh_min == 0.20
+    assert config.simulation.price_per_kwh_max == 0.45
+    assert config.simulation.n_chargers_min == 1
+    assert config.simulation.start_day.isoformat() == "2018-09-05"
+    assert config.simulation.stations_path.as_posix() == "data/processed/sim_stations.csv"
+    assert config.simulation.run_path.as_posix() == "data/processed/sim_run.csv"
+    assert config.simulation.station_ticks_path.as_posix() == "data/processed/sim_station_ticks.csv"
+    assert config.simulation.metrics_path.as_posix() == "data/processed/sim_metrics.csv"
     assert set(config.experiment.policies) >= {
         PolicyName.NEAREST,
         PolicyName.CHEAPEST,
@@ -155,6 +170,22 @@ def test_unknown_learner_key_fails() -> None:
     payload = load_config().model_dump(mode="json")
     payload["models"]["demand"]["learners"]["svm"] = {"alpha": 1.0, "search": {"alpha": [1.0]}}
     with pytest.raises(ValidationError):
+        AppConfig.model_validate(payload)
+
+
+def test_soc_min_must_be_below_charge_target() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["simulation"]["soc_min"] = 0.95
+    payload["simulation"]["soc_charge_target"] = 0.9
+    with pytest.raises(ValidationError, match="soc_min"):
+        AppConfig.model_validate(payload)
+
+
+def test_price_min_must_not_exceed_max() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["simulation"]["price_per_kwh_min"] = 0.50
+    payload["simulation"]["price_per_kwh_max"] = 0.20
+    with pytest.raises(ValidationError, match="price_per_kwh"):
         AppConfig.model_validate(payload)
 
 

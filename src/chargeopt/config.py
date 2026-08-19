@@ -5,7 +5,7 @@ MVP numbers live in YAML. Code must not hardcode fleet size, timestep, or horizo
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
@@ -39,6 +39,20 @@ class SimulationConfig(BaseModel):
     timestep_minutes: int
     horizon_hours: int = Field(ge=1)
     charger_power_kw: float = Field(gt=0)
+    battery_kwh: float = Field(gt=0)
+    soc_initial: float = Field(ge=0, le=1)
+    soc_min: float = Field(ge=0, le=1)
+    soc_charge_target: float = Field(ge=0, le=1)
+    trips_per_vehicle: int = Field(ge=1)
+    metro_span_km: float = Field(gt=0)
+    price_per_kwh_min: float = Field(ge=0)
+    price_per_kwh_max: float = Field(ge=0)
+    n_chargers_min: int = Field(ge=1)
+    start_day: date
+    stations_path: Path
+    run_path: Path
+    station_ticks_path: Path
+    metrics_path: Path
 
     @field_validator("timestep_minutes")
     @classmethod
@@ -47,6 +61,16 @@ class SimulationConfig(BaseModel):
             msg = "timestep_minutes must be 15 or 30 for MVP"
             raise ValueError(msg)
         return value
+
+    @model_validator(mode="after")
+    def soc_and_price_bounds(self) -> Self:
+        if self.soc_min >= self.soc_charge_target:
+            msg = "soc_min must be below soc_charge_target"
+            raise ValueError(msg)
+        if self.price_per_kwh_min > self.price_per_kwh_max:
+            msg = "price_per_kwh_min must be <= price_per_kwh_max"
+            raise ValueError(msg)
+        return self
 
     @property
     def steps_per_day(self) -> int:
