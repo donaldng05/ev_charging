@@ -171,10 +171,11 @@ def _repair_departures(
     for index in range(1, len(raw)):
         earliest = departures[index - 1] + int(durations[index - 1]) + 1
         departures.append(max(int(raw[index]), earliest))
-    overflow = departures[-1] + int(durations[-1]) - horizon_ticks
-    if overflow > 0:
-        departures = [departure - overflow for departure in departures]
-    if departures[0] < 0:
-        shift = -departures[0]
-        departures = [departure + shift for departure in departures]
+    departures[-1] = min(
+        departures[-1],
+        horizon_ticks - int(durations[-1]),
+    )
+    for index in range(len(departures) - 2, -1, -1):
+        latest = departures[index + 1] - int(durations[index]) - 1
+        departures[index] = min(departures[index], latest)
     return departures

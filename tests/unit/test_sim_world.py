@@ -3,10 +3,13 @@
 from itertools import pairwise
 from pathlib import Path
 
+import numpy as np
+
 from chargeopt.config import load_config
 from chargeopt.data.io import read_sessions_csv
 from chargeopt.simulation.calibration import calibrate_from_sessions
 from chargeopt.simulation.world import (
+    _repair_departures,
     build_fleet,
     build_stations,
     build_trips,
@@ -110,3 +113,17 @@ def test_trip_generation_is_seeded_ordered_and_within_horizon() -> None:
             trip.departure_tick + trip.duration_ticks <= config.simulation.steps_per_day
             for trip in itinerary
         )
+
+
+def test_repair_departures_keeps_late_itinerary_inside_horizon() -> None:
+    durations = np.asarray([1, 2])
+
+    departures = _repair_departures(
+        np.asarray([0, 95]),
+        durations,
+        horizon_ticks=96,
+    )
+
+    assert departures[0] >= 0
+    assert departures[-1] + int(durations[-1]) <= 96
+    assert departures[0] + int(durations[0]) < departures[1]

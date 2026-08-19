@@ -140,6 +140,14 @@ def run_world(
             occupancy,
             queues,
         )
+        for station in stations:
+            _promote_queue(
+                station.station_id,
+                station_by_id,
+                states,
+                occupancy,
+                queues,
+            )
         for vehicle_id in states:
             state = states[vehicle_id]
             itinerary = itineraries.get(vehicle_id, [])
@@ -202,6 +210,9 @@ def run_world(
         station_energy = {station.station_id: 0.0 for station in stations}
         station_occupancy = {
             station.station_id: len(occupancy[station.station_id]) for station in stations
+        }
+        station_queue_lengths = {
+            station.station_id: len(queues[station.station_id]) for station in stations
         }
         charged_this_tick = {
             vehicle_id
@@ -272,7 +283,7 @@ def run_world(
                     timestamp=timestamp,
                     station_id=station_id,
                     occupancy=station_occupancy[station_id],
-                    queue_len=len(queues[station_id]),
+                    queue_len=station_queue_lengths[station_id],
                     energy_delivered_kwh=station_energy[station_id],
                 ).model_dump()
             )

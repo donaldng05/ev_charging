@@ -112,6 +112,63 @@ def test_fifo_queue_never_exceeds_station_capacity() -> None:
     assert result.metrics.vehicle_idle_minutes == pytest.approx(90.0)
 
 
+def test_station_queue_snapshot_matches_vehicle_queue_activity() -> None:
+    vehicles = _vehicles(3)
+    result = run_world(
+        _simulation(fleet_size=3),
+        stations=[_station()],
+        vehicles=vehicles,
+        trips=[_trip(vehicle.vehicle_id) for vehicle in vehicles],
+        seed=42,
+        timezone_name="America/Los_Angeles",
+    )
+
+    queued_vehicle_count = result.vehicle_ticks.loc[
+        result.vehicle_ticks["tick"] == 1,
+        "queued_this_tick",
+    ].sum()
+    station_queue_len = result.station_ticks.loc[
+        result.station_ticks["tick"] == 1,
+        "queue_len",
+    ].item()
+
+    assert station_queue_len == queued_vehicle_count
+
+
+def test_departure_release_promotes_fifo_queue_before_new_arrivals() -> None:
+    vehicles = _vehicles(3)
+    trips = [
+        _trip("vehicle-000"),
+        FleetTrip(
+            vehicle_id="vehicle-000",
+            trip_index=1,
+            departure_tick=1,
+            distance_km=5.0,
+            duration_ticks=2,
+            energy_kwh=1.0,
+        ),
+        _trip("vehicle-001"),
+        _trip("vehicle-002", energy_kwh=1.0, duration_ticks=2),
+    ]
+
+    result = run_world(
+        _simulation(fleet_size=3),
+        stations=[_station()],
+        vehicles=vehicles,
+        trips=trips,
+        seed=42,
+        timezone_name="America/Los_Angeles",
+    )
+
+    at_tick_one = result.vehicle_ticks.loc[result.vehicle_ticks["tick"] == 1].set_index(
+        "vehicle_id"
+    )
+    assert at_tick_one.loc["vehicle-001", "status"] == "charging"
+    assert at_tick_one.loc["vehicle-002", "status"] == "queued"
+    assert at_tick_one.loc["vehicle-001", "charged_this_tick"]
+    assert at_tick_one.loc["vehicle-002", "queued_this_tick"]
+
+
 def test_insufficient_soc_records_planned_trip_as_stranded_delay() -> None:
     result = run_world(
         _simulation(fleet_size=1),
