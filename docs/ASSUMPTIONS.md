@@ -9,6 +9,12 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 - About 30 vehicles and 10 stations (see `configs/default.yaml`).
 - Stations are homogeneous except location, number of chargers, charging power, and price.
 - One charger power in the default config (150 kW). No mixed connector types.
+- Generic 60 kWh batteries start at 70% SOC, preserve a 10% minimum reserve,
+  and leave charging at a 90% target.
+- Each vehicle has two seeded trips per day and an evenly assigned synthetic
+  home station. M3 always returns it there; station-selection policies land in M4.
+- Synthetic locations occupy a 12 km square and station prices span
+  $0.20–$0.45/kWh.
 
 ## Time
 
@@ -23,6 +29,8 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 ## Energy and demand
 
 - Trip energy starts from a fixed-rate baseline (`kWh/km`) plus an ML regressor once M2 lands.
+- M3 uses the same noise-free rate × distance × cold-penalty relationship used
+  to generate M2 training targets. Fitted estimators are not serialized.
 - Demand forecasting predicts next-hour station energy demand, not individual sessions.
 - Vehicle telemetry is synthetic. Charging demand is calibrated from public ACN-Data (Caltech). That distinction stays explicit.
 

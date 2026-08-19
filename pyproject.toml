@@ -63,7 +63,6 @@ source = ["chargeopt"]
 omit = [
     "src/chargeopt/__main__.py",
     "src/chargeopt/optimization/*",
-    "src/chargeopt/simulation/*",
     "src/chargeopt/evaluation/*",
 ]
 

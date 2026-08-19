@@ -125,6 +125,25 @@ with the same `split`, `target`, `prediction`, `model`, `seed` contract
 (`model` is `physics` plus the five learners). `chargeopt models energy` also writes
 a dedicated −10°C holdout metrics CSV (`models.energy.cold_metrics_path`).
 
+## Synthetic simulator artifacts
+
+`chargeopt simulate` reads the normalized session snapshot only to calibrate:
+
+- a 24-bin arrival-hour probability distribution,
+- mean connected duration for Little's-law charger sizing, and
+- mean delivered energy as a calibration diagnostic.
+
+The simulation creates `sim-00` … `sim-09`; these identifiers never correspond
+to ACN `stationID` values. Locations, prices, batteries, SOC, and fleet
+itineraries remain synthetic. The canonical gitignored artifacts are:
+
+| Path | Grain | Key columns |
+| --- | --- | --- |
+| `data/processed/sim_stations.csv` | one row per synthetic station | `station_id`, `x_km`, `y_km`, `n_chargers`, `power_kw`, `price_per_kwh` |
+| `data/processed/sim_run.csv` | vehicle × 15-minute tick | `tick`, `timestamp`, `vehicle_id`, `status`, `soc`, `station_id`, `trip_index`, `x_km`, `y_km` |
+| `data/processed/sim_station_ticks.csv` | station × tick | `tick`, `timestamp`, `station_id`, `occupancy`, `queue_len`, `energy_delivered_kwh` |
+| `data/processed/sim_metrics.csv` | one row per seed | `seed` plus the six metrics in `docs/EXPERIMENTS.md` |
+
 ## Temporal split
 
 Never randomly shuffle sessions or demand intervals. Split the sorted 15-minute

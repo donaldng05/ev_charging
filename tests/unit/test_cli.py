@@ -204,6 +204,60 @@ def test_models_requires_subcommand() -> None:
     assert main(["models"]) == 2
 
 
+def test_simulate_writes_structured_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "simulation.yaml"
+    stations = tmp_path / "stations.csv"
+    run = tmp_path / "run.csv"
+    station_ticks = tmp_path / "station_ticks.csv"
+    metrics = tmp_path / "metrics.csv"
+    snapshot = Path("tests/fixtures/acn_sessions.csv").resolve()
+    patched = (
+        source.replace(
+            "snapshot_path: data/raw/acn_caltech_sessions.csv",
+            f"snapshot_path: {snapshot.as_posix()}",
+        )
+        .replace(
+            "stations_path: data/processed/sim_stations.csv",
+            f"stations_path: {stations.as_posix()}",
+        )
+        .replace(
+            "run_path: data/processed/sim_run.csv",
+            f"run_path: {run.as_posix()}",
+        )
+        .replace(
+            "station_ticks_path: data/processed/sim_station_ticks.csv",
+            f"station_ticks_path: {station_ticks.as_posix()}",
+        )
+        .replace(
+            "metrics_path: data/processed/sim_metrics.csv",
+            f"metrics_path: {metrics.as_posix()}",
+        )
+    )
+    config_path.write_text(patched, encoding="utf-8")
+
+    assert main(["simulate", "--config", str(config_path), "--seed", "42"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "ok"
+    assert payload["seed"] == 42
+    assert payload["n_ticks"] == 96
+    assert payload["n_vehicles"] == 30
+    assert set(payload["metrics"]) == {
+        "seed",
+        "energy_cost",
+        "avg_wait_minutes",
+        "soc_violations",
+        "energy_usage_kwh",
+        "station_utilization",
+        "vehicle_idle_minutes",
+    }
+    assert all(path.is_file() for path in (stations, run, station_ticks, metrics))
+
+
 def test_models_tune_requires_target() -> None:
     assert main(["models", "tune"]) == 2
 

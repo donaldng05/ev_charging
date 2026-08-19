@@ -1,0 +1,104 @@
+"""CSV persistence for one simulator run."""
+
+from pathlib import Path
+
+import pandas as pd
+
+from chargeopt.simulation.engine import SimResult
+
+STATION_COLUMNS: tuple[str, ...] = (
+    "station_id",
+    "x_km",
+    "y_km",
+    "n_chargers",
+    "power_kw",
+    "price_per_kwh",
+)
+VEHICLE_TICK_COLUMNS: tuple[str, ...] = (
+    "tick",
+    "timestamp",
+    "vehicle_id",
+    "status",
+    "soc",
+    "station_id",
+    "trip_index",
+    "x_km",
+    "y_km",
+)
+STATION_TICK_COLUMNS: tuple[str, ...] = (
+    "tick",
+    "timestamp",
+    "station_id",
+    "occupancy",
+    "queue_len",
+    "energy_delivered_kwh",
+)
+METRIC_COLUMNS: tuple[str, ...] = (
+    "seed",
+    "energy_cost",
+    "avg_wait_minutes",
+    "soc_violations",
+    "energy_usage_kwh",
+    "station_utilization",
+    "vehicle_idle_minutes",
+)
+
+
+def write_simulation_artifacts(
+    result: SimResult,
+    *,
+    stations_path: Path,
+    run_path: Path,
+    station_ticks_path: Path,
+    metrics_path: Path,
+) -> None:
+    """Write canonical station, vehicle-tick, station-tick, and metric CSVs."""
+    _write(result.stations, stations_path, STATION_COLUMNS)
+    _write(result.vehicle_ticks, run_path, VEHICLE_TICK_COLUMNS)
+    _write(result.station_ticks, station_ticks_path, STATION_TICK_COLUMNS)
+    _write(
+        pd.DataFrame([result.metrics.model_dump()]),
+        metrics_path,
+        METRIC_COLUMNS,
+    )
+
+
+def read_sim_stations(path: Path) -> pd.DataFrame:
+    return _read(path, STATION_COLUMNS)
+
+
+def read_vehicle_ticks(path: Path) -> pd.DataFrame:
+    frame = _read(path, VEHICLE_TICK_COLUMNS)
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    return frame
+
+
+def read_station_ticks(path: Path) -> pd.DataFrame:
+    frame = _read(path, STATION_TICK_COLUMNS)
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    return frame
+
+
+def read_sim_metrics(path: Path) -> pd.DataFrame:
+    return _read(path, METRIC_COLUMNS)
+
+
+def _write(frame: pd.DataFrame, path: Path, columns: tuple[str, ...]) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        msg = f"simulation artifact missing columns: {missing}"
+        raise ValueError(msg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.loc[:, list(columns)].to_csv(path, index=False)
+
+
+def _read(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
+    if not path.is_file():
+        msg = f"simulation artifact not found: {path}"
+        raise FileNotFoundError(msg)
+    frame = pd.read_csv(path)
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        msg = f"simulation artifact missing columns: {missing}"
+        raise ValueError(msg)
+    return frame.loc[:, list(columns)]
