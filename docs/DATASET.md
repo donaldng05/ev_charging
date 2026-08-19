@@ -142,7 +142,11 @@ itineraries remain synthetic. The canonical gitignored artifacts are:
 | `data/processed/sim_stations.csv` | one row per synthetic station | `station_id`, `x_km`, `y_km`, `n_chargers`, `power_kw`, `price_per_kwh` |
 | `data/processed/sim_run.csv` | vehicle × 15-minute tick | state columns plus `drove_this_tick`, `charged_this_tick`, `queued_this_tick`, `stranded_this_tick` |
 | `data/processed/sim_station_ticks.csv` | station × tick | `tick`, `timestamp`, `station_id`, `occupancy`, `queue_len`, `energy_delivered_kwh` |
-| `data/processed/sim_metrics.csv` | one row per seed | `seed` plus the six metrics in `docs/EXPERIMENTS.md` |
+| `data/processed/sim_metrics.csv` | one row per seed and routing | `seed`, `routing` (`home` or `concentrated`), `peak_queue`, plus the six metrics in `docs/EXPERIMENTS.md` |
+
+`chargeopt simulate --all-seeds` writes one `home` row per configured seed and
+one `concentrated` probe row for the first seed. Single-seed `simulate` writes
+the same columns for `routing=home`.
 
 Tick activity columns describe work performed during the interval even when
 the end-of-tick `status` has already changed. Metrics are auditable from the
