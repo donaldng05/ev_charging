@@ -40,14 +40,45 @@ stress:
 models:
   demand:
     horizon_minutes: 60
-    n_estimators: 200
-    max_depth: 12
-    min_samples_leaf: 8
     n_splits: 4
-    search:
-      n_estimators: [100, 200]
-      max_depth: [6, 8, 12]
-      min_samples_leaf: [2, 8]
+    decision_model: random_forest
+    learners:
+      random_forest:
+        n_estimators: 200
+        max_depth: 12
+        min_samples_leaf: 8
+        search:
+          n_estimators: [100, 200]
+          max_depth: [6, 8, 12]
+          min_samples_leaf: [2, 8]
+      ridge:
+        alpha: 0.1
+        search:
+          alpha: [0.1, 1.0, 10.0, 100.0]
+      elasticnet:
+        alpha: 0.1
+        l1_ratio: 0.8
+        search:
+          alpha: [0.1, 1.0, 10.0]
+          l1_ratio: [0.2, 0.5, 0.8]
+      extra_trees:
+        n_estimators: 100
+        max_depth: 12
+        min_samples_leaf: 8
+        search:
+          n_estimators: [100, 200]
+          max_depth: [6, 8, 12]
+          min_samples_leaf: [2, 8]
+      hist_gradient_boosting:
+        max_iter: 100
+        max_depth: 6
+        learning_rate: 0.1
+        min_samples_leaf: 20
+        search:
+          max_iter: [100, 200]
+          max_depth: [3, 6]
+          learning_rate: [0.05, 0.1]
+          min_samples_leaf: [10, 20]
     predictions_path: data/processed/demand_predictions.csv
     metrics_path: data/processed/demand_metrics.csv
     tune_metrics_path: data/processed/demand_tune.csv
@@ -64,13 +95,43 @@ models:
     temperature_reference_c: 20.0
     cold_penalty_per_c: 0.01
     noise_std_kwh: 0.05
-    n_estimators: 100
-    max_depth: 6
-    min_samples_leaf: 2
-    search:
-      n_estimators: [100, 200]
-      max_depth: [6, 8, 12]
-      min_samples_leaf: [2, 8]
+    learners:
+      random_forest:
+        n_estimators: 100
+        max_depth: 6
+        min_samples_leaf: 2
+        search:
+          n_estimators: [100, 200]
+          max_depth: [6, 8, 12]
+          min_samples_leaf: [2, 8]
+      ridge:
+        alpha: 100.0
+        search:
+          alpha: [0.1, 1.0, 10.0, 100.0]
+      elasticnet:
+        alpha: 0.1
+        l1_ratio: 0.2
+        search:
+          alpha: [0.1, 1.0, 10.0]
+          l1_ratio: [0.2, 0.5, 0.8]
+      extra_trees:
+        n_estimators: 200
+        max_depth: 12
+        min_samples_leaf: 2
+        search:
+          n_estimators: [100, 200]
+          max_depth: [6, 8, 12]
+          min_samples_leaf: [2, 8]
+      hist_gradient_boosting:
+        max_iter: 200
+        max_depth: 6
+        learning_rate: 0.05
+        min_samples_leaf: 10
+        search:
+          max_iter: [100, 200]
+          max_depth: [3, 6]
+          learning_rate: [0.05, 0.1]
+          min_samples_leaf: [10, 20]
     cold_holdout_n_trips: 200
     trips_path: data/processed/synthetic_trips.csv
     predictions_path: data/processed/energy_predictions.csv

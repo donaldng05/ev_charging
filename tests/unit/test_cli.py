@@ -9,6 +9,27 @@ from pathlib import Path
 import pytest
 
 from chargeopt.cli import main
+from chargeopt.config import LEARNER_NAMES
+
+
+def _shrink_learner_grids(source: str) -> str:
+    return (
+        source.replace("n_estimators: 200", "n_estimators: 20")
+        .replace("n_estimators: 100", "n_estimators: 20")
+        .replace("n_estimators: [100, 200]", "n_estimators: [8]")
+        .replace("max_depth: [6, 8, 12]", "max_depth: [2]")
+        .replace("min_samples_leaf: [2, 8]", "min_samples_leaf: [1]")
+        .replace("max_iter: 200", "max_iter: 20")
+        .replace("max_iter: 100", "max_iter: 20")
+        .replace("max_iter: [100, 200]", "max_iter: [20]")
+        .replace("max_depth: [3, 6]", "max_depth: [2]")
+        .replace("learning_rate: [0.05, 0.1]", "learning_rate: [0.1]")
+        .replace("min_samples_leaf: [10, 20]", "min_samples_leaf: [1]")
+        .replace("alpha: [0.1, 1.0, 10.0, 100.0]", "alpha: [0.1, 1.0]")
+        .replace("alpha: [0.1, 1.0, 10.0]", "alpha: [1.0]")
+        .replace("l1_ratio: [0.2, 0.5, 0.8]", "l1_ratio: [0.5]")
+        .replace("n_splits: 4", "n_splits: 2")
+    )
 
 
 def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -92,7 +113,7 @@ def test_data_features_from_fixture(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 
 def test_models_demand_from_fixture(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    source = _shrink_learner_grids(Path("configs/default.yaml").read_text(encoding="utf-8"))
     yaml_path = tmp_path / "cfg.yaml"
     processed = tmp_path / "demand.csv"
     predictions = tmp_path / "demand_predictions.csv"
@@ -120,7 +141,6 @@ def test_models_demand_from_fixture(tmp_path: Path, capsys: pytest.CaptureFixtur
             "error_slices_path: data/processed/demand_error_slices.csv",
             f"error_slices_path: {slices.as_posix()}",
         )
-        .replace("n_estimators: 200", "n_estimators: 20", 1)
     )
     yaml_path.write_text(patched, encoding="utf-8")
     assert main(["data", "features", "--config", str(yaml_path)]) == 0
@@ -128,7 +148,10 @@ def test_models_demand_from_fixture(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert main(["models", "demand", "--config", str(yaml_path), "--seed", "42"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert "random_forest" in payload["test_mae"]
+    assert set(LEARNER_NAMES) <= set(payload["test_mae"])
+    assert payload["decision_model"] == "random_forest"
+    assert "learned_beats_baselines" in payload
+    assert payload["best_learned"] in LEARNER_NAMES
     assert predictions.is_file()
     assert metrics.is_file()
     assert slices.is_file()
@@ -142,7 +165,8 @@ def test_models_energy_writes_artifacts(tmp_path: Path, capsys: pytest.CaptureFi
     metrics = tmp_path / "energy_metrics.csv"
     cold_metrics = tmp_path / "energy_cold_metrics.csv"
     patched = (
-        source.replace("n_trips: 2000", "n_trips: 80")
+        _shrink_learner_grids(source)
+        .replace("n_trips: 2000", "n_trips: 80")
         .replace("cold_holdout_n_trips: 200", "cold_holdout_n_trips: 40")
         .replace(
             "trips_path: data/processed/synthetic_trips.csv",
@@ -167,6 +191,9 @@ def test_models_energy_writes_artifacts(tmp_path: Path, capsys: pytest.CaptureFi
     assert payload["status"] == "ok"
     assert payload["n_trips"] == 80
     assert "physics" in payload["test_mae"]
+    assert set(LEARNER_NAMES) <= set(payload["test_mae"])
+    assert "learned_beats_baselines" in payload
+    assert payload["best_learned"] in LEARNER_NAMES
     assert "cold_mae" in payload
     assert trips.is_file()
     assert predictions.is_file()
@@ -184,7 +211,7 @@ def test_models_tune_requires_target() -> None:
 def test_models_tune_demand_from_fixture(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    source = _shrink_learner_grids(Path("configs/default.yaml").read_text(encoding="utf-8"))
     yaml_path = tmp_path / "cfg.yaml"
     processed = tmp_path / "demand.csv"
     predictions = tmp_path / "demand_predictions.csv"
@@ -212,10 +239,6 @@ def test_models_tune_demand_from_fixture(
             "tune_metrics_path: data/processed/demand_tune.csv",
             f"tune_metrics_path: {tune_metrics.as_posix()}",
         )
-        .replace("n_estimators: [100, 200]", "n_estimators: [8]")
-        .replace("max_depth: [6, 8, 12]", "max_depth: [2]")
-        .replace("min_samples_leaf: [2, 8]", "min_samples_leaf: [1]")
-        .replace("n_splits: 4", "n_splits: 2")
     )
     yaml_path.write_text(patched, encoding="utf-8")
     assert main(["data", "features", "--config", str(yaml_path)]) == 0
@@ -223,20 +246,24 @@ def test_models_tune_demand_from_fixture(
     assert main(["models", "tune", "demand", "--config", str(yaml_path), "--seed", "42"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert set(payload["best_params"]) == {"n_estimators", "max_depth", "min_samples_leaf"}
+    assert set(payload["best_params"]) == set(LEARNER_NAMES)
+    assert set(payload["best_params"]["random_forest"]) == {
+        "n_estimators",
+        "max_depth",
+        "min_samples_leaf",
+    }
+    assert set(payload["best_params"]["ridge"]) == {"alpha"}
     assert tune_metrics.is_file()
+    assert "model" in tune_metrics.read_text(encoding="utf-8").splitlines()[0]
 
 
 def test_models_tune_energy(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    source = _shrink_learner_grids(Path("configs/default.yaml").read_text(encoding="utf-8"))
     yaml_path = tmp_path / "cfg.yaml"
     trips = tmp_path / "trips.csv"
     tune_metrics = tmp_path / "energy_tune.csv"
     patched = (
         source.replace("n_trips: 2000", "n_trips: 80")
-        .replace("n_estimators: [100, 200]", "n_estimators: [8]")
-        .replace("max_depth: [6, 8, 12]", "max_depth: [2]")
-        .replace("min_samples_leaf: [2, 8]", "min_samples_leaf: [1]")
         .replace(
             "trips_path: data/processed/synthetic_trips.csv",
             f"trips_path: {trips.as_posix()}",
@@ -250,5 +277,59 @@ def test_models_tune_energy(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert main(["models", "tune", "energy", "--config", str(yaml_path), "--seed", "42"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "ok"
-    assert set(payload["best_params"]) == {"n_estimators", "max_depth", "min_samples_leaf"}
+    assert set(payload["best_params"]) == set(LEARNER_NAMES)
+    assert set(payload["best_params"]["random_forest"]) == {
+        "n_estimators",
+        "max_depth",
+        "min_samples_leaf",
+    }
     assert tune_metrics.is_file()
+    assert "model" in tune_metrics.read_text(encoding="utf-8").splitlines()[0]
+
+
+def test_models_tune_demand_filters_learner(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _shrink_learner_grids(Path("configs/default.yaml").read_text(encoding="utf-8"))
+    yaml_path = tmp_path / "cfg.yaml"
+    processed = tmp_path / "demand.csv"
+    tune_metrics = tmp_path / "demand_tune.csv"
+    snapshot = Path("tests/fixtures/acn_sessions.csv").resolve()
+    patched = (
+        source.replace(
+            "snapshot_path: data/raw/acn_caltech_sessions.csv",
+            f"snapshot_path: {snapshot.as_posix()}",
+        )
+        .replace(
+            "processed_path: data/processed/acn_caltech_demand_15min.csv",
+            f"processed_path: {processed.as_posix()}",
+        )
+        .replace(
+            "tune_metrics_path: data/processed/demand_tune.csv",
+            f"tune_metrics_path: {tune_metrics.as_posix()}",
+        )
+    )
+    yaml_path.write_text(patched, encoding="utf-8")
+    assert main(["data", "features", "--config", str(yaml_path)]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "models",
+                "tune",
+                "demand",
+                "--config",
+                str(yaml_path),
+                "--seed",
+                "42",
+                "--learner",
+                "ridge",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["learners"] == ["ridge"]
+    assert set(payload["best_params"]) == {"ridge"}
+    assert set(payload["best_params"]["ridge"]) == {"alpha"}
+    assert set(payload["val_mae"]) == {"ridge"}

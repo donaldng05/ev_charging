@@ -42,7 +42,7 @@ Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not
 
 ## In MVP 1
 
-- 2 models: station demand (next hour) and trip energy
+- 2 modeling tasks: station demand (next hour) and trip energy, each compared across sklearn learners (`random_forest`, `ridge`, `elasticnet`, `extra_trees`, `hist_gradient_boosting`) plus naive/physics baselines
 - 3 policies: nearest, cheapest, ML-informed
 - 1 discrete-time simulator (15-minute ticks, 24-hour horizon)
 - 6 metrics: energy cost, wait, SOC violations, energy usage, station utilization, idle time

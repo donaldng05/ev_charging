@@ -8,6 +8,7 @@ from typing import Any, cast
 import pandas as pd
 
 from chargeopt.data.schemas import DemandPrediction, EnergyPrediction
+from chargeopt.models.learners import RANDOM_FOREST
 
 DEMAND_PREDICTION_COLUMNS: tuple[str, ...] = (
     "timestamp",
@@ -81,7 +82,7 @@ def lookup_predicted_congestion(
     forecast: pd.DataFrame,
     timestamp: pd.Timestamp,
     *,
-    model: str,
+    model: str = RANDOM_FOREST,
 ) -> float:
     ts = pd.Timestamp(timestamp)
     ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")

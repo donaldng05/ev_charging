@@ -8,7 +8,9 @@ import pytest
 from pydantic import ValidationError
 
 from chargeopt.config import (
+    LEARNER_NAMES,
     AppConfig,
+    LearnerSuite,
     PolicyName,
     default_config_path,
     load_config,
@@ -34,10 +36,15 @@ def test_default_config_round_trip() -> None:
     assert config.data.site == "caltech"
     assert config.data.train_fraction + config.data.val_fraction < 1
     assert config.models.demand.horizon_minutes == 60
-    assert config.models.demand.n_estimators == 200
-    assert config.models.demand.max_depth == 12
-    assert config.models.demand.min_samples_leaf == 8
+    assert config.models.demand.decision_model == "random_forest"
+    assert config.models.demand.learners.random_forest.n_estimators == 200
+    assert config.models.demand.learners.random_forest.max_depth == 12
+    assert config.models.demand.learners.random_forest.min_samples_leaf == 8
     assert config.models.demand.n_splits == 4
+    assert config.models.demand.learners.ridge.alpha == 0.1
+    assert config.models.demand.learners.elasticnet.l1_ratio == 0.8
+    assert config.models.demand.learners.extra_trees.n_estimators == 100
+    assert config.models.demand.learners.hist_gradient_boosting.max_iter == 100
     assert config.data.start.isoformat() == "2018-05-01T00:00:00"
     assert config.data.end.isoformat() == "2026-08-17T00:00:00"
     assert config.data.covid_start.isoformat() == "2020-03-01T00:00:00"
@@ -142,3 +149,24 @@ def test_demand_horizon_must_divide_timestep() -> None:
     payload["models"]["demand"]["horizon_minutes"] = 50
     with pytest.raises(ValidationError, match="horizon_minutes"):
         AppConfig.model_validate(payload)
+
+
+def test_unknown_learner_key_fails() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["models"]["demand"]["learners"]["svm"] = {"alpha": 1.0, "search": {"alpha": [1.0]}}
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate(payload)
+
+
+def test_invalid_decision_model_fails() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["models"]["demand"]["decision_model"] = "last_observation"
+    with pytest.raises(ValidationError, match="decision_model"):
+        AppConfig.model_validate(payload)
+
+
+def test_learner_suite_names_match_config() -> None:
+    config = load_config()
+    assert tuple(LearnerSuite.model_fields) == LEARNER_NAMES
+    assert set(config.models.demand.learners.params_for("ridge")) == {"alpha"}
+    assert set(config.models.energy.learners.params_for("elasticnet")) == {"alpha", "l1_ratio"}

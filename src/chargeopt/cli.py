@@ -10,6 +10,7 @@ from pathlib import Path
 
 from chargeopt import __version__
 from chargeopt.config import (
+    LEARNER_NAMES,
     AppConfig,
     PolicyName,
     RuntimeSettings,
@@ -25,16 +26,26 @@ from chargeopt.data.io import (
 )
 from chargeopt.features.demand import build_demand_table
 from chargeopt.features.energy import generate_synthetic_trips
-from chargeopt.models.demand import horizon_bins, train_and_predict_demand
-from chargeopt.models.energy import evaluate_energy_cold_holdout, train_and_predict_energy
+from chargeopt.models.demand import DEMAND_BASELINES, horizon_bins, train_and_predict_demand
+from chargeopt.models.energy import PHYSICS, evaluate_energy_cold_holdout, train_and_predict_energy
 from chargeopt.models.io import (
     write_demand_predictions,
     write_energy_predictions,
     write_error_slices,
     write_metrics,
 )
-from chargeopt.models.metrics import error_slices_from_predictions, test_mae_by_model
-from chargeopt.models.tune import param_grid, tune_demand_random_forest, tune_energy_random_forest
+from chargeopt.models.metrics import (
+    best_learned,
+    error_slices_from_predictions,
+    learned_beats_baselines,
+    test_mae_by_model,
+)
+from chargeopt.models.tune import (
+    param_grid,
+    resolve_learner_names,
+    tune_demand_learners,
+    tune_energy_learners,
+)
 from chargeopt.utils.experiment import experiment_id, git_sha
 from chargeopt.utils.log import configure_logging
 from chargeopt.utils.seed import set_seed
@@ -54,6 +65,15 @@ def _parse_policy(value: str) -> PolicyName:
         msg = f"unknown policy {value!r}; expected one of: {allowed}"
         raise argparse.ArgumentTypeError(msg)
     return POLICY_ALIASES[key]
+
+
+def _add_learner_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--learner",
+        choices=list(LEARNER_NAMES),
+        default=None,
+        help="Tune one learner (default: all configured learners).",
+    )
 
 
 def _add_config_and_seed(parser: argparse.ArgumentParser) -> None:
@@ -126,12 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
     models_sub = models.add_subparsers(dest="models_command")
     demand = models_sub.add_parser(
         "demand",
-        help="Fit demand baselines and Random Forest on the 15-minute demand table.",
+        help="Fit demand baselines and sklearn learners on the 15-minute demand table.",
     )
     _add_config_and_seed(demand)
     energy = models_sub.add_parser(
         "energy",
-        help="Generate synthetic trips and fit physics plus Random Forest energy models.",
+        help="Generate synthetic trips and fit physics plus sklearn residual energy models.",
     )
     _add_config_and_seed(energy)
     tune = models_sub.add_parser(
@@ -140,14 +160,16 @@ def build_parser() -> argparse.ArgumentParser:
     tune_sub = tune.add_subparsers(dest="tune_command")
     tune_demand = tune_sub.add_parser(
         "demand",
-        help="Walk-forward Random Forest search on chronological train folds.",
+        help="Walk-forward learner search on chronological train folds.",
     )
     _add_config_and_seed(tune_demand)
+    _add_learner_flag(tune_demand)
     tune_energy = tune_sub.add_parser(
         "energy",
-        help="Validate-split Random Forest search for trip energy.",
+        help="Validate-split learner search for trip energy.",
     )
     _add_config_and_seed(tune_energy)
+    _add_learner_flag(tune_energy)
     return parser
 
 
@@ -248,9 +270,7 @@ def run_models_demand(args: argparse.Namespace) -> int:
         demand,
         timestep_minutes=config.simulation.timestep_minutes,
         horizon_minutes=config.models.demand.horizon_minutes,
-        n_estimators=config.models.demand.n_estimators,
-        max_depth=config.models.demand.max_depth,
-        min_samples_leaf=config.models.demand.min_samples_leaf,
+        learners=config.models.demand.learners,
         seed=seed,
     )
     pred_path = resolve_data_path(config.models.demand.predictions_path)
@@ -261,20 +281,18 @@ def run_models_demand(args: argparse.Namespace) -> int:
     slices_path = resolve_data_path(config.models.demand.error_slices_path)
     write_error_slices(slices, slices_path)
     test_mae = test_mae_by_model(metrics)
-    rf_mae = test_mae.get("random_forest")
-    baseline_maes = [
-        test_mae[name]
-        for name in ("last_observation", "historical_average", "weekly_naive")
-        if name in test_mae
-    ]
     payload = {
         "status": "ok",
         "n_rows": len(predictions),
         "seed": seed,
         "test_mae": test_mae,
-        "rf_beats_baselines": rf_mae is not None
-        and bool(baseline_maes)
-        and all(rf_mae < mae for mae in baseline_maes),
+        "learned_beats_baselines": learned_beats_baselines(
+            test_mae,
+            learners=LEARNER_NAMES,
+            baselines=DEMAND_BASELINES,
+        ),
+        "best_learned": best_learned(test_mae, LEARNER_NAMES),
+        "decision_model": config.models.demand.decision_model,
         "predictions_path": str(pred_path),
         "metrics_path": str(metrics_path),
         "error_slices_path": str(slices_path),
@@ -317,8 +335,6 @@ def run_models_energy(args: argparse.Namespace) -> int:
     cold_path = resolve_data_path(config.models.energy.cold_metrics_path)
     write_metrics(cold_metrics, cold_path)
     test_mae = test_mae_by_model(metrics)
-    rf_mae = test_mae.get("random_forest")
-    physics_mae = test_mae.get("physics")
     cold_lookup = {str(row["model"]): float(row["mae"]) for _, row in cold_metrics.iterrows()}
     payload = {
         "status": "ok",
@@ -327,9 +343,12 @@ def run_models_energy(args: argparse.Namespace) -> int:
         "seed": seed,
         "test_mae": test_mae,
         "cold_mae": cold_lookup,
-        "rf_beats_baselines": rf_mae is not None
-        and physics_mae is not None
-        and rf_mae < physics_mae,
+        "learned_beats_baselines": learned_beats_baselines(
+            test_mae,
+            learners=LEARNER_NAMES,
+            baselines=(PHYSICS,),
+        ),
+        "best_learned": best_learned(test_mae, LEARNER_NAMES),
         "trips_path": str(trips_path),
         "predictions_path": str(pred_path),
         "metrics_path": str(metrics_path),
@@ -344,28 +363,33 @@ def run_models_tune_demand(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     seed = _resolve_seed(args, config)
     set_seed(seed)
+    names = resolve_learner_names(args.learner)
     demand = read_demand_csv(resolve_data_path(config.data.processed_path))
     gap = horizon_bins(
         config.models.demand.horizon_minutes,
         config.simulation.timestep_minutes,
     )
-    best_params, fold_metrics, val_mae = tune_demand_random_forest(
+    best_params, fold_metrics, val_mae = tune_demand_learners(
         demand,
+        learners=config.models.demand.learners,
         timestep_minutes=config.simulation.timestep_minutes,
         horizon_minutes=config.models.demand.horizon_minutes,
         n_splits=config.models.demand.n_splits,
-        search=config.models.demand.search,
         seed=seed,
         gap=gap,
+        names=names,
     )
     path = resolve_data_path(config.models.demand.tune_metrics_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fold_metrics.to_csv(path, index=False)
     payload = {
         "status": "ok",
+        "learners": list(names),
         "best_params": best_params,
         "val_mae": val_mae,
-        "n_combos": len(param_grid(config.models.demand.search)),
+        "n_combos": {
+            name: len(param_grid(config.models.demand.learners.search_for(name))) for name in names
+        },
         "n_splits": config.models.demand.n_splits,
         "tune_metrics_path": str(path),
         "seed": seed,
@@ -379,26 +403,30 @@ def run_models_tune_energy(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     seed = _resolve_seed(args, config)
     set_seed(seed)
+    names = resolve_learner_names(args.learner)
     trips = generate_synthetic_trips(
         config.models.energy,
         seed=seed,
         train_fraction=config.data.train_fraction,
         val_fraction=config.data.val_fraction,
     )
-    best_params, fold_metrics, val_mae = tune_energy_random_forest(
+    best_params, fold_metrics, val_mae = tune_energy_learners(
         trips,
         spec=config.models.energy,
-        search=config.models.energy.search,
         seed=seed,
+        names=names,
     )
     path = resolve_data_path(config.models.energy.tune_metrics_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fold_metrics.to_csv(path, index=False)
     payload = {
         "status": "ok",
+        "learners": list(names),
         "best_params": best_params,
         "val_mae": val_mae,
-        "n_combos": len(param_grid(config.models.energy.search)),
+        "n_combos": {
+            name: len(param_grid(config.models.energy.learners.search_for(name))) for name in names
+        },
         "tune_metrics_path": str(path),
         "seed": seed,
     }
