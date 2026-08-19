@@ -40,3 +40,19 @@ class HomeStationChooser:
             msg = f"unknown home station {vehicle.home_station_id!r}"
             raise ValueError(msg)
         return vehicle.home_station_id
+
+
+class ConcentratedStationChooser:
+    """M3 sensitivity probe: every vehicle routes to one station."""
+
+    def choose(
+        self,
+        vehicle: VehicleState,
+        stations: Sequence[SimStation],
+        *,
+        tick: int,
+        occupancy: Mapping[str, int],
+        queues: Mapping[str, tuple[str, ...]],
+    ) -> str:
+        del vehicle, tick, occupancy, queues
+        return min(station.station_id for station in stations)
