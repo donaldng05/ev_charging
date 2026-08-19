@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from chargeopt.config import LEARNER_NAMES
 from chargeopt.data.io import read_sessions_csv
 from chargeopt.features.demand import build_demand_table
 from chargeopt.models.baselines import (
@@ -26,6 +27,7 @@ from chargeopt.models.demand import (
     horizon_bins,
     train_and_predict_demand,
 )
+from tests.unit.model_helpers import fast_learners
 
 FIXTURE = Path("tests/fixtures/acn_sessions.csv")
 COVID_START = datetime(2020, 3, 1, tzinfo=ZoneInfo("America/Los_Angeles"))
@@ -142,16 +144,15 @@ def test_train_and_predict_demand_is_reproducible() -> None:
     kwargs = {
         "timestep_minutes": 15,
         "horizon_minutes": 60,
-        "n_estimators": 20,
-        "max_depth": 4,
-        "min_samples_leaf": 1,
+        "learners": fast_learners(),
         "seed": 42,
     }
     first, _ = train_and_predict_demand(demand, **kwargs)
     second, _ = train_and_predict_demand(demand, **kwargs)
-    forest = first.loc[first["model"] == "random_forest", "prediction"].to_numpy()
-    forest_again = second.loc[second["model"] == "random_forest", "prediction"].to_numpy()
-    np.testing.assert_allclose(forest, forest_again)
+    for name in LEARNER_NAMES:
+        left = first.loc[first["model"] == name, "prediction"].to_numpy()
+        right = second.loc[second["model"] == name, "prediction"].to_numpy()
+        np.testing.assert_allclose(left, right)
 
 
 def test_demand_forest_ignores_test_energy() -> None:
@@ -159,23 +160,18 @@ def test_demand_forest_ignores_test_energy() -> None:
     kwargs = {
         "timestep_minutes": 15,
         "horizon_minutes": 60,
-        "n_estimators": 20,
-        "max_depth": 4,
-        "min_samples_leaf": 1,
+        "learners": fast_learners(),
         "seed": 42,
     }
     first, _ = train_and_predict_demand(frame, **kwargs)
     leaked = frame.copy()
     leaked.loc[leaked["split"] == "test", "energy_kwh"] = 1_000.0
     second, _ = train_and_predict_demand(leaked, **kwargs)
-    for split in ("train", "val"):
-        left = first.loc[
-            (first["model"] == "random_forest") & (first["split"] == split), "prediction"
-        ]
-        right = second.loc[
-            (second["model"] == "random_forest") & (second["split"] == split), "prediction"
-        ]
-        np.testing.assert_allclose(left.to_numpy(), right.to_numpy())
+    for name in LEARNER_NAMES:
+        for split in ("train", "val"):
+            left = first.loc[(first["model"] == name) & (first["split"] == split), "prediction"]
+            right = second.loc[(second["model"] == name) & (second["split"] == split), "prediction"]
+            np.testing.assert_allclose(left.to_numpy(), right.to_numpy())
 
 
 def test_demand_predictions_include_required_columns() -> None:
@@ -193,14 +189,13 @@ def test_demand_predictions_include_required_columns() -> None:
         demand,
         timestep_minutes=15,
         horizon_minutes=60,
-        n_estimators=20,
-        max_depth=4,
-        min_samples_leaf=1,
+        learners=fast_learners(),
         seed=42,
     )
     required = {"timestamp", "split", "target", "prediction", "model", "seed"}
     assert required <= set(predictions.columns)
-    assert set(predictions["model"]) >= {"last_observation", "historical_average", "random_forest"}
+    expected_models = {"last_observation", "historical_average", "random_forest", *LEARNER_NAMES}
+    assert expected_models <= set(predictions["model"])
     assert set(predictions["split"]) <= {"train", "val", "test"}
     assert "test" in set(predictions["split"])
     assert {"model", "split", "mae", "rmse", "n"} <= set(metrics.columns)
@@ -213,9 +208,7 @@ def test_weekly_naive_is_emitted_when_history_covers_one_week() -> None:
         frame,
         timestep_minutes=15,
         horizon_minutes=60,
-        n_estimators=10,
-        max_depth=3,
-        min_samples_leaf=1,
+        learners=fast_learners(n_estimators=10, max_depth=3),
         seed=42,
     )
     assert "weekly_naive" in set(predictions["model"])

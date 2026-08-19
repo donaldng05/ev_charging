@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from chargeopt.config import load_config
+from chargeopt.config import LEARNER_NAMES, load_config
 from chargeopt.features.energy import generate_synthetic_trips
 from chargeopt.models.energy import (
     ENERGY_FEATURE_COLUMNS,
@@ -13,11 +13,12 @@ from chargeopt.models.energy import (
     physics_energy,
     train_and_predict_energy,
 )
+from tests.unit.model_helpers import fast_learners
 
 
 def _energy_spec(*, n_trips: int = 80):
     spec = load_config().models.energy
-    return spec.model_copy(update={"n_trips": n_trips, "n_estimators": 30, "max_depth": 4})
+    return spec.model_copy(update={"n_trips": n_trips, "learners": fast_learners(n_estimators=30)})
 
 
 def test_physics_energy_is_rate_times_distance() -> None:
@@ -45,7 +46,7 @@ def test_energy_forest_fits_train_only_and_beats_physics_on_test() -> None:
     spec = _energy_spec(n_trips=200)
     trips = generate_synthetic_trips(spec, seed=42, train_fraction=0.7, val_fraction=0.15)
     predictions, metrics = train_and_predict_energy(trips, spec=spec, seed=42)
-    assert set(predictions["model"]) == {"physics", "random_forest"}
+    assert set(predictions["model"]) == {"physics", *LEARNER_NAMES}
     required = {"trip_id", "split", "target", "prediction", "model", "seed"}
     assert required <= set(predictions.columns)
 
@@ -58,9 +59,10 @@ def test_energy_forest_is_reproducible() -> None:
     trips = generate_synthetic_trips(spec, seed=7, train_fraction=0.7, val_fraction=0.15)
     first, _ = train_and_predict_energy(trips, spec=spec, seed=7)
     second, _ = train_and_predict_energy(trips, spec=spec, seed=7)
-    rf = first.loc[first["model"] == "random_forest", "prediction"].to_numpy()
-    rf_again = second.loc[second["model"] == "random_forest", "prediction"].to_numpy()
-    np.testing.assert_allclose(rf, rf_again)
+    for name in LEARNER_NAMES:
+        left = first.loc[first["model"] == name, "prediction"].to_numpy()
+        right = second.loc[second["model"] == name, "prediction"].to_numpy()
+        np.testing.assert_allclose(left, right)
 
 
 def test_fixed_temperature_trips_are_constant() -> None:
@@ -89,4 +91,6 @@ def test_energy_cold_holdout_is_minus_ten() -> None:
         val_fraction=0.15,
     )
     assert set(metrics["split"]) == {"cold"}
-    assert set(metrics["model"]) == {"physics", "random_forest"}
+    assert set(metrics["model"]) == {"physics", *LEARNER_NAMES}
+    assert metrics["mae"].notna().all()
+    assert np.isfinite(metrics["mae"].to_numpy()).all()

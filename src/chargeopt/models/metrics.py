@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import cast
 
 import numpy as np
@@ -36,6 +37,29 @@ def metrics_from_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
 def test_mae_by_model(metrics: pd.DataFrame) -> dict[str, float]:
     test = metrics.loc[metrics["split"] == "test"]
     return {str(row["model"]): float(row["mae"]) for _, row in test.iterrows()}
+
+
+def learned_beats_baselines(
+    test_mae: dict[str, float],
+    *,
+    learners: Sequence[str],
+    baselines: Sequence[str],
+) -> dict[str, bool]:
+    baseline_maes = [test_mae[name] for name in baselines if name in test_mae]
+    beats: dict[str, bool] = {}
+    for name in learners:
+        mae = test_mae.get(name)
+        beats[name] = (
+            mae is not None and bool(baseline_maes) and all(mae < other for other in baseline_maes)
+        )
+    return beats
+
+
+def best_learned(test_mae: dict[str, float], learners: Sequence[str]) -> str | None:
+    available = {name: test_mae[name] for name in learners if name in test_mae}
+    if not available:
+        return None
+    return min(available.items(), key=lambda item: (item[1], item[0]))[0]
 
 
 def error_slices_from_predictions(predictions: pd.DataFrame, demand: pd.DataFrame) -> pd.DataFrame:

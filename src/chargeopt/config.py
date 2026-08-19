@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -93,7 +93,30 @@ class StressConfig(BaseModel):
     station_availability: float = Field(gt=0, le=1)
 
 
-class HyperparameterGrid(BaseModel):
+LEARNER_NAMES: tuple[str, ...] = (
+    "random_forest",
+    "ridge",
+    "elasticnet",
+    "extra_trees",
+    "hist_gradient_boosting",
+)
+
+
+def _positive_ints(value: list[int]) -> list[int]:
+    if any(item < 1 for item in value):
+        msg = "search grid values must be >= 1"
+        raise ValueError(msg)
+    return value
+
+
+def _positive_floats(value: list[float]) -> list[float]:
+    if any(item <= 0 for item in value):
+        msg = "search grid values must be > 0"
+        raise ValueError(msg)
+    return value
+
+
+class TreeSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     n_estimators: list[int] = Field(min_length=1)
@@ -103,25 +126,154 @@ class HyperparameterGrid(BaseModel):
     @field_validator("n_estimators", "max_depth", "min_samples_leaf")
     @classmethod
     def grid_values_positive(cls, value: list[int]) -> list[int]:
-        if any(item < 1 for item in value):
-            msg = "search grid values must be >= 1"
+        return _positive_ints(value)
+
+
+class TreeLearnerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_estimators: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    min_samples_leaf: int = Field(ge=1)
+    search: TreeSearch
+
+
+class RidgeSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alpha: list[float] = Field(min_length=1)
+
+    @field_validator("alpha")
+    @classmethod
+    def alpha_positive(cls, value: list[float]) -> list[float]:
+        return _positive_floats(value)
+
+
+class RidgeLearnerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alpha: float = Field(gt=0)
+    search: RidgeSearch
+
+
+class ElasticNetSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alpha: list[float] = Field(min_length=1)
+    l1_ratio: list[float] = Field(min_length=1)
+
+    @field_validator("alpha")
+    @classmethod
+    def alpha_positive(cls, value: list[float]) -> list[float]:
+        return _positive_floats(value)
+
+    @field_validator("l1_ratio")
+    @classmethod
+    def l1_ratio_unit_interval(cls, value: list[float]) -> list[float]:
+        if any(item < 0 or item > 1 for item in value):
+            msg = "l1_ratio search values must be in [0, 1]"
             raise ValueError(msg)
         return value
+
+
+class ElasticNetLearnerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alpha: float = Field(gt=0)
+    l1_ratio: float = Field(ge=0, le=1)
+    search: ElasticNetSearch
+
+
+class HistGradientBoostingSearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_iter: list[int] = Field(min_length=1)
+    max_depth: list[int] = Field(min_length=1)
+    learning_rate: list[float] = Field(min_length=1)
+    min_samples_leaf: list[int] = Field(min_length=1)
+
+    @field_validator("max_iter", "max_depth", "min_samples_leaf")
+    @classmethod
+    def grid_values_positive(cls, value: list[int]) -> list[int]:
+        return _positive_ints(value)
+
+    @field_validator("learning_rate")
+    @classmethod
+    def learning_rate_positive(cls, value: list[float]) -> list[float]:
+        return _positive_floats(value)
+
+
+class HistGradientBoostingLearnerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_iter: int = Field(ge=1)
+    max_depth: int = Field(ge=1)
+    learning_rate: float = Field(gt=0)
+    min_samples_leaf: int = Field(ge=1)
+    search: HistGradientBoostingSearch
+
+
+class LearnerSuite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    random_forest: TreeLearnerConfig
+    ridge: RidgeLearnerConfig
+    elasticnet: ElasticNetLearnerConfig
+    extra_trees: TreeLearnerConfig
+    hist_gradient_boosting: HistGradientBoostingLearnerConfig
+
+    def params_for(self, name: str) -> dict[str, Any]:
+        payload = self.learner(name).model_dump()
+        payload.pop("search")
+        return payload
+
+    def search_for(self, name: str) -> dict[str, list[Any]]:
+        return self.learner(name).search.model_dump()
+
+    def learner(
+        self,
+        name: str,
+    ) -> (
+        TreeLearnerConfig
+        | RidgeLearnerConfig
+        | ElasticNetLearnerConfig
+        | HistGradientBoostingLearnerConfig
+    ):
+        if name == "random_forest":
+            return self.random_forest
+        if name == "ridge":
+            return self.ridge
+        if name == "elasticnet":
+            return self.elasticnet
+        if name == "extra_trees":
+            return self.extra_trees
+        if name == "hist_gradient_boosting":
+            return self.hist_gradient_boosting
+        allowed = ", ".join(LEARNER_NAMES)
+        msg = f"unknown learner {name!r}; expected one of: {allowed}"
+        raise ValueError(msg)
 
 
 class DemandModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     horizon_minutes: int = Field(gt=0)
-    n_estimators: int = Field(ge=1)
-    max_depth: int = Field(ge=1)
-    min_samples_leaf: int = Field(ge=1)
     n_splits: int = Field(ge=2)
-    search: HyperparameterGrid
+    decision_model: str
+    learners: LearnerSuite
     predictions_path: Path
     metrics_path: Path
     tune_metrics_path: Path
     error_slices_path: Path
+
+    @field_validator("decision_model")
+    @classmethod
+    def decision_model_is_learner(cls, value: str) -> str:
+        if value not in LEARNER_NAMES:
+            allowed = ", ".join(LEARNER_NAMES)
+            msg = f"models.demand.decision_model must be one of: {allowed}"
+            raise ValueError(msg)
+        return value
 
 
 class EnergyModelConfig(BaseModel):
@@ -138,10 +290,7 @@ class EnergyModelConfig(BaseModel):
     temperature_reference_c: float
     cold_penalty_per_c: float = Field(ge=0)
     noise_std_kwh: float = Field(ge=0)
-    n_estimators: int = Field(ge=1)
-    max_depth: int = Field(ge=1)
-    min_samples_leaf: int = Field(ge=1)
-    search: HyperparameterGrid
+    learners: LearnerSuite
     cold_holdout_n_trips: int = Field(ge=1)
     trips_path: Path
     predictions_path: Path

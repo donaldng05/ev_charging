@@ -82,9 +82,12 @@ The stored demand CSV does not include a forecast column. At train time M2 deriv
 horizon crosses a `split` boundary are dropped so train labels never use val/test
 energy.
 
-Demand features for the learned model are calendar fields plus lags and rolling
+Demand features for the learned models are calendar fields plus lags and rolling
 means already in the table (`lag_1w` and `rolling_mean_7d` included). Current-bin
-`energy_kwh`, `n_arrivals`, and `era` are not features.
+`energy_kwh`, `n_arrivals`, and `era` are not features. Frozen hyperparameters
+and search grids live under `models.demand.learners` / `models.energy.learners`
+in [`configs/default.yaml`](../configs/default.yaml). M4 lookup uses
+`models.demand.decision_model` (currently `random_forest`).
 
 ## Demand prediction CSV
 
@@ -96,7 +99,7 @@ Canonical artifact: `data/processed/demand_predictions.csv` (gitignored).
 | `split` | `train` / `val` / `test` of that timestamp |
 | `target` | Next-hour energy (kWh) |
 | `prediction` | Model output |
-| `model` | `last_observation`, `historical_average`, `weekly_naive`, or `random_forest` |
+| `model` | `last_observation`, `historical_average`, `weekly_naive`, `random_forest`, `ridge`, `elasticnet`, `extra_trees`, or `hist_gradient_boosting` |
 | `seed` | Config/CLI seed |
 
 ## Synthetic trips
@@ -114,12 +117,12 @@ with the experiment seed; not ACN-Data.
 | `energy_kwh` | Rate × distance × cold penalty + noise |
 | `split` | Chronological generation-index split (same fractions as demand) |
 
-Physics baseline predicts `rate_kwh_per_km * distance_km`. The Random Forest
+Physics baseline predicts `rate_kwh_per_km * distance_km`. Each sklearn learner
 fits the residual `energy_kwh - physics` using `distance_km` and `temperature_c`
 only (`duration_min` is sampled but is not in the generative formula), then
 adds physics back. Energy predictions use `trip_id` in place of `timestamp`
 with the same `split`, `target`, `prediction`, `model`, `seed` contract
-(`model` is `physics` or `random_forest`). `chargeopt models energy` also writes
+(`model` is `physics` plus the five learners). `chargeopt models energy` also writes
 a dedicated −10°C holdout metrics CSV (`models.energy.cold_metrics_path`).
 
 ## Temporal split
@@ -133,7 +136,8 @@ describe COVID campus regimes for error slices; they are not model features, so
 a 70/15/15 split on the full Caltech window puts COVID inside train and recent
 years in test.
 
-Walk-forward fold metrics: `data/processed/demand_tune.csv` (gitignored).
+Walk-forward fold metrics: `data/processed/demand_tune.csv` (gitignored), with a
+`model` column so every learner shares one file.
 Hour/weekend/era error slices: `data/processed/demand_error_slices.csv`.
 
 ## What is not in this dataset

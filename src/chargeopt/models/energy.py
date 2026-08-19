@@ -1,15 +1,16 @@
-"""Physics baseline and residual Random Forest trip-energy models."""
+"""Physics baseline and residual sklearn trip-energy models."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.impute import SimpleImputer
 
-from chargeopt.config import EnergyModelConfig
+from chargeopt.config import LEARNER_NAMES, EnergyModelConfig
 from chargeopt.features.energy import generate_synthetic_trips
-from chargeopt.models.demand import fit_random_forest, predict_random_forest
+from chargeopt.models.learners import FittedLearner, fit_learner, predict_learner
 from chargeopt.models.metrics import metrics_from_predictions, regression_metrics
 
 PHYSICS = "physics"
@@ -29,44 +30,35 @@ def residual_energy_target(trips: pd.DataFrame, rate_kwh_per_km: float) -> pd.Se
     return trips["energy_kwh"].astype(float) - physics_energy(trips["distance_km"], rate_kwh_per_km)
 
 
-def fit_residual_forest(
+def fit_residual_learner(
     train: pd.DataFrame,
     *,
     spec: EnergyModelConfig,
+    name: str,
+    params: Mapping[str, Any],
     seed: int,
-    n_estimators: int | None = None,
-    max_depth: int | None = None,
-    min_samples_leaf: int | None = None,
-) -> tuple[SimpleImputer, RandomForestRegressor]:
+) -> FittedLearner:
     residual_frame = train.copy()
     residual_frame[RESIDUAL_COLUMN] = residual_energy_target(train, spec.rate_kwh_per_km)
-    return fit_random_forest(
+    return fit_learner(
         residual_frame,
+        name=name,
         feature_columns=ENERGY_FEATURE_COLUMNS,
         target_column=RESIDUAL_COLUMN,
-        n_estimators=n_estimators or spec.n_estimators,
-        max_depth=max_depth or spec.max_depth,
-        min_samples_leaf=min_samples_leaf or spec.min_samples_leaf,
+        params=params,
         seed=seed,
     )
 
 
-def predict_residual_forest(
+def predict_residual_learner(
     trips: pd.DataFrame,
     *,
     spec: EnergyModelConfig,
-    imputer: SimpleImputer,
-    forest: RandomForestRegressor,
+    fitted: FittedLearner,
 ) -> np.ndarray:
-    residual = predict_random_forest(
-        trips,
-        imputer=imputer,
-        forest=forest,
-        feature_columns=ENERGY_FEATURE_COLUMNS,
-    )
+    residual = predict_learner(trips, fitted, feature_columns=ENERGY_FEATURE_COLUMNS)
     physics = physics_energy(trips["distance_km"], spec.rate_kwh_per_km).to_numpy()
-    clipped = np.asarray(np.maximum(physics + residual, 0.0), dtype=float)
-    return clipped
+    return np.asarray(np.maximum(physics + residual, 0.0), dtype=float)
 
 
 def train_and_predict_energy(
@@ -81,15 +73,18 @@ def train_and_predict_energy(
         raise ValueError(msg)
 
     physics = physics_energy(trips["distance_km"], spec.rate_kwh_per_km)
-    imputer, forest = fit_residual_forest(train, spec=spec, seed=seed)
-    rf_pred = predict_residual_forest(trips, spec=spec, imputer=imputer, forest=forest)
-    predictions = pd.concat(
-        [
-            _energy_prediction_frame(trips, physics.to_numpy(), PHYSICS, seed),
-            _energy_prediction_frame(trips, rf_pred, RANDOM_FOREST, seed),
-        ],
-        ignore_index=True,
-    )
+    frames = [_energy_prediction_frame(trips, physics.to_numpy(), PHYSICS, seed)]
+    for name in LEARNER_NAMES:
+        fitted = fit_residual_learner(
+            train,
+            spec=spec,
+            name=name,
+            params=spec.learners.params_for(name),
+            seed=seed,
+        )
+        predicted = predict_residual_learner(trips, spec=spec, fitted=fitted)
+        frames.append(_energy_prediction_frame(trips, predicted, name, seed))
+    predictions = pd.concat(frames, ignore_index=True)
     predictions = predictions.dropna(subset=["target", "prediction"]).reset_index(drop=True)
     return predictions, metrics_from_predictions(predictions)
 
@@ -112,13 +107,25 @@ def evaluate_energy_cold_holdout(
         val_fraction=val_fraction,
         temperature_c=temperature_c,
     )
-    imputer, forest = fit_residual_forest(train, spec=spec, seed=seed)
     physics = physics_energy(cold["distance_km"], spec.rate_kwh_per_km).to_numpy()
-    rf_pred = predict_residual_forest(cold, spec=spec, imputer=imputer, forest=forest)
-    rows = []
-    for model, prediction in ((PHYSICS, physics), (RANDOM_FOREST, rf_pred)):
-        stats = regression_metrics(cold["energy_kwh"], pd.Series(prediction))
-        rows.append({"model": model, "split": "cold", **stats})
+    rows = [
+        {
+            "model": PHYSICS,
+            "split": "cold",
+            **regression_metrics(cold["energy_kwh"], pd.Series(physics)),
+        }
+    ]
+    for name in LEARNER_NAMES:
+        fitted = fit_residual_learner(
+            train,
+            spec=spec,
+            name=name,
+            params=spec.learners.params_for(name),
+            seed=seed,
+        )
+        predicted = predict_residual_learner(cold, spec=spec, fitted=fitted)
+        stats = regression_metrics(cold["energy_kwh"], pd.Series(predicted))
+        rows.append({"model": name, "split": "cold", **stats})
     return pd.DataFrame(rows)
 
 
