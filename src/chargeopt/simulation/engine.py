@@ -124,12 +124,14 @@ def run_world(
     energy_usage = 0.0
     soc_violations = 0
     queued_ticks = 0
-    idle_ticks = 0
+    policy_delay_ticks = 0
     occupied_ticks = 0
     charge_sessions = 0
+    stranded_until: dict[str, int] = {}
 
     for tick in range(spec.steps_per_day):
         timestamp = start + timedelta(minutes=tick * spec.timestep_minutes)
+        _release_stranded(tick, states, stranded_until)
         _release_for_departures(
             tick,
             states,
@@ -152,15 +154,19 @@ def run_world(
             if available_kwh + 1e-12 < trip.energy_kwh:
                 soc_violations += 1
                 state.trip_index = trip.trip_index
+                state.status = VehicleStatus.STRANDED
+                stranded_until[vehicle_id] = tick + trip.duration_ticks
                 continue
             state.status = VehicleStatus.DRIVING
             state.station_id = None
             state.trip_index = trip.trip_index
             state.remaining_travel_ticks = trip.duration_ticks
 
+        drove_this_tick: set[str] = set()
         for state in states.values():
             if state.status is not VehicleStatus.DRIVING:
                 continue
+            drove_this_tick.add(state.vehicle_id)
             trip = trip_by_key[(state.vehicle_id, state.trip_index)]
             consumed = trip.energy_kwh / trip.duration_ticks
             next_soc = state.soc - consumed / state.battery_kwh
@@ -197,7 +203,21 @@ def run_world(
         station_occupancy = {
             station.station_id: len(occupancy[station.station_id]) for station in stations
         }
-        queued_ticks += sum(len(queue) for queue in queues.values())
+        charged_this_tick = {
+            vehicle_id
+            for station_occupancy_ids in occupancy.values()
+            for vehicle_id in station_occupancy_ids
+        }
+        queued_this_tick = {
+            vehicle_id for station_queue in queues.values() for vehicle_id in station_queue
+        }
+        stranded_this_tick = {
+            vehicle_id
+            for vehicle_id, state in states.items()
+            if state.status is VehicleStatus.STRANDED
+        }
+        queued_ticks += len(queued_this_tick)
+        policy_delay_ticks += len(queued_this_tick | stranded_this_tick)
         for station in stations:
             station_id = station.station_id
             for vehicle_id in list(occupancy[station_id]):
@@ -226,7 +246,6 @@ def run_world(
             )
 
         for state in states.values():
-            idle_ticks += state.status is VehicleStatus.IDLE
             vehicle_rows.append(
                 VehicleTick(
                     tick=tick,
@@ -238,6 +257,10 @@ def run_world(
                     trip_index=state.trip_index,
                     x_km=state.x_km,
                     y_km=state.y_km,
+                    drove_this_tick=state.vehicle_id in drove_this_tick,
+                    charged_this_tick=state.vehicle_id in charged_this_tick,
+                    queued_this_tick=state.vehicle_id in queued_this_tick,
+                    stranded_this_tick=state.vehicle_id in stranded_this_tick,
                 ).model_dump()
             )
         for station in stations:
@@ -264,7 +287,7 @@ def run_world(
         energy_usage_kwh=energy_usage,
         occupied_charger_ticks=occupied_ticks,
         available_charger_ticks=available_ticks,
-        idle_vehicle_ticks=idle_ticks,
+        policy_delay_vehicle_ticks=policy_delay_ticks,
         timestep_minutes=spec.timestep_minutes,
     )
     return SimResult(
@@ -273,6 +296,19 @@ def run_world(
         station_ticks=pd.DataFrame(station_rows),
         metrics=metrics,
     )
+
+
+def _release_stranded(
+    tick: int,
+    states: dict[str, VehicleState],
+    stranded_until: dict[str, int],
+) -> None:
+    completed = [
+        vehicle_id for vehicle_id, release_tick in stranded_until.items() if tick >= release_tick
+    ]
+    for vehicle_id in completed:
+        states[vehicle_id].status = VehicleStatus.IDLE
+        del stranded_until[vehicle_id]
 
 
 def _release_for_departures(

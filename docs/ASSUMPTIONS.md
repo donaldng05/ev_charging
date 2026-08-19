@@ -9,10 +9,15 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 - About 30 vehicles and 10 stations (see `configs/default.yaml`).
 - Stations are homogeneous except location, number of chargers, charging power, and price.
 - One charger power in the default config (150 kW). No mixed connector types.
+- Charger counts use ACN mean delivered energy converted to 15-minute charging
+  service ticks. ACN connected duration remains a diagnostic because the
+  simulator does not model plugged-idle parking.
 - Generic 60 kWh batteries start at 70% SOC, preserve a 10% minimum reserve,
   and leave charging at a 90% target.
 - Each vehicle has two seeded trips per day and an evenly assigned synthetic
-  home station. M3 always returns it there; station-selection policies land in M4.
+  home station. Two trips is the first policy-neutral candidate that passed the
+  frozen normal-scenario calibration gate. M3 always returns vehicles home;
+  station-selection policies land in M4.
 - Synthetic locations occupy a 12 km square and station prices span
   $0.20–$0.45/kWh.
 

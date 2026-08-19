@@ -24,6 +24,10 @@ VEHICLE_TICK_COLUMNS: tuple[str, ...] = (
     "trip_index",
     "x_km",
     "y_km",
+    "drove_this_tick",
+    "charged_this_tick",
+    "queued_this_tick",
+    "stranded_this_tick",
 )
 STATION_TICK_COLUMNS: tuple[str, ...] = (
     "tick",

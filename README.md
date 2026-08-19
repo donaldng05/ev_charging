@@ -50,7 +50,9 @@ The experiment runner is a placeholder until M5. It already loads and validates 
 `chargeopt simulate` reads the normalized ACN session snapshot, calibrates a
 synthetic 10-station world, and runs the configured 30-vehicle fleet for 96
 15-minute ticks. It writes gitignored station, vehicle-tick, station-tick, and
-run-metric CSV artifacts under `data/processed/`.
+run-metric CSV artifacts under `data/processed/`. Vehicle-tick activity flags
+make driving, charging, queued, and stranded time auditable even when status
+changes within one tick.
 
 `chargeopt models demand` reads the processed 15-minute demand CSV and writes
 gitignored prediction, metrics, and error-slice artifacts.

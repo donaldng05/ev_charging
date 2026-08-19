@@ -256,6 +256,13 @@ def test_simulate_writes_structured_artifacts(
         "vehicle_idle_minutes",
     }
     assert all(path.is_file() for path in (stations, run, station_ticks, metrics))
+    run_columns = set(run.read_text(encoding="utf-8").splitlines()[0].split(","))
+    assert {
+        "drove_this_tick",
+        "charged_this_tick",
+        "queued_this_tick",
+        "stranded_this_tick",
+    } <= run_columns
 
 
 def test_models_tune_requires_target() -> None:

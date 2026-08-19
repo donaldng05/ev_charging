@@ -37,7 +37,22 @@ The comparison that matters is nearest vs ML-informed, with cheapest as a second
 | `soc_violations` | Vehicles that cannot complete a trip given SOC |
 | `energy_usage_kwh` | Energy consumed by the fleet |
 | `station_utilization` | Occupied charger-time / available charger-time |
-| `vehicle_idle_minutes` | Time spent waiting or stranded, not driving or charging |
+| `vehicle_idle_minutes` | Total policy-induced delay: queued plus stranded vehicle-minutes |
+
+`vehicle_idle_minutes` excludes normal parked/off-duty time. Queue delay is
+also reported as `avg_wait_minutes`; that overlap is intentional because one is
+a fleet total and the other is an average per charging session.
+
+## Normal-scenario calibration gate
+
+The normal scenario is frozen before M4 policy rankings. Across configured
+seeds it must have zero SOC violations, 5%–20% median aggregate utilization,
+queue exposure in at least 3 of 10 seeds, and no more than 10 minutes mean
+home-station wait. A concentrated-routing sensitivity probe must add at least
+15 minutes average wait and produce a peak queue of at least 3 vehicles.
+
+The first candidate passing these policy-neutral checks is retained. The
+calibration does not inspect nearest, cheapest, or ML-informed rankings.
 
 ## Stress scenario
 

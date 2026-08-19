@@ -6,7 +6,12 @@ from pathlib import Path
 from chargeopt.config import load_config
 from chargeopt.data.io import read_sessions_csv
 from chargeopt.simulation.calibration import calibrate_from_sessions
-from chargeopt.simulation.world import build_fleet, build_stations, build_trips
+from chargeopt.simulation.world import (
+    build_fleet,
+    build_stations,
+    build_trips,
+    charging_service_ticks,
+)
 
 FIXTURE = Path("tests/fixtures/acn_sessions.csv")
 
@@ -38,6 +43,30 @@ def test_world_builders_use_config_and_do_not_reuse_acn_evse_ids() -> None:
     assert len({station.price_per_kwh for station in stations}) == len(stations)
     assert len(vehicles) == config.simulation.fleet_size
     assert vehicles[11].home_station_id == "sim-01"
+
+
+def test_station_capacity_uses_energy_service_time_not_connected_duration() -> None:
+    config = load_config()
+    calibration = calibrate_from_sessions(
+        read_sessions_csv(FIXTURE),
+        timestep_minutes=config.simulation.timestep_minutes,
+    )
+    long_dwell = calibration.model_copy(
+        update={"mean_duration_min": calibration.mean_duration_min * 100}
+    )
+    high_energy = calibration.model_copy(update={"mean_energy_kwh": 1000.0})
+
+    assert charging_service_ticks(config.simulation, calibration) == 1
+    baseline = build_stations(config.simulation, calibration, seed=42)
+    dwell_only = build_stations(config.simulation, long_dwell, seed=42)
+    energy_heavy = build_stations(config.simulation, high_energy, seed=42)
+
+    assert [station.n_chargers for station in dwell_only] == [
+        station.n_chargers for station in baseline
+    ]
+    assert sum(station.n_chargers for station in energy_heavy) > sum(
+        station.n_chargers for station in baseline
+    )
 
 
 def test_trip_generation_is_seeded_ordered_and_within_horizon() -> None:

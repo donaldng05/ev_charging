@@ -79,8 +79,13 @@ def test_driving_consumes_energy_per_tick_and_soc_stays_bounded() -> None:
     assert ticks.iloc[0]["status"] == "driving"
     assert ticks.iloc[0]["soc"] == pytest.approx(0.7)
     assert ticks.iloc[1]["soc"] == pytest.approx(0.7)
+    assert ticks["drove_this_tick"].tolist()[:2] == [True, True]
+    assert ticks["charged_this_tick"].tolist()[:2] == [False, True]
+    assert not ticks["queued_this_tick"].any()
+    assert not ticks["stranded_this_tick"].any()
     assert ticks["soc"].between(0.0, 1.0).all()
     assert result.metrics.energy_usage_kwh == pytest.approx(2.0)
+    assert result.metrics.vehicle_idle_minutes == 0
 
 
 def test_fifo_queue_never_exceeds_station_capacity() -> None:
@@ -104,22 +109,44 @@ def test_fifo_queue_never_exceeds_station_capacity() -> None:
     assert at_tick_one.loc["vehicle-001", "status"] == "charging"
     assert at_tick_one.loc["vehicle-002", "status"] == "queued"
     assert result.metrics.avg_wait_minutes == pytest.approx(30.0)
+    assert result.metrics.vehicle_idle_minutes == pytest.approx(90.0)
 
 
-def test_insufficient_soc_skips_trip_and_records_violation() -> None:
+def test_insufficient_soc_records_planned_trip_as_stranded_delay() -> None:
     result = run_world(
         _simulation(fleet_size=1),
         stations=[_station()],
         vehicles=_vehicles(1),
-        trips=[_trip("vehicle-000", energy_kwh=7.5)],
+        trips=[_trip("vehicle-000", energy_kwh=7.5, duration_ticks=2)],
         seed=42,
         timezone_name="America/Los_Angeles",
     )
 
     vehicle = result.vehicle_ticks.loc[result.vehicle_ticks["vehicle_id"] == "vehicle-000"]
-    assert (vehicle["status"] == "idle").all()
+    assert vehicle["status"].tolist()[:3] == ["stranded", "stranded", "idle"]
+    assert vehicle["stranded_this_tick"].tolist()[:3] == [True, True, False]
     assert (vehicle["soc"] == 0.8).all()
     assert result.metrics.soc_violations == 1
+    assert result.metrics.vehicle_idle_minutes == 30.0
+
+
+def test_same_tick_charging_is_not_counted_as_policy_delay() -> None:
+    result = run_world(
+        _simulation(fleet_size=1),
+        stations=[_station().model_copy(update={"power_kw": 8.0})],
+        vehicles=_vehicles(1),
+        trips=[_trip("vehicle-000", energy_kwh=1.0)],
+        seed=42,
+        timezone_name="America/Los_Angeles",
+    )
+
+    first_tick = result.vehicle_ticks.iloc[0]
+    assert first_tick["status"] == "idle"
+    assert first_tick["drove_this_tick"]
+    assert first_tick["charged_this_tick"]
+    assert not first_tick["queued_this_tick"]
+    assert not first_tick["stranded_this_tick"]
+    assert result.metrics.vehicle_idle_minutes == 0
 
 
 def test_seeded_default_run_has_30_vehicles_and_96_ticks() -> None:
@@ -140,4 +167,14 @@ def test_seeded_default_run_has_30_vehicles_and_96_ticks() -> None:
         first.stations["n_chargers"].sum() * 96
     )
     assert first.metrics.station_utilization == pytest.approx(expected_utilization)
+    queued_minutes = first.vehicle_ticks["queued_this_tick"].sum() * 15
+    stranded_minutes = first.vehicle_ticks["stranded_this_tick"].sum() * 15
+    assert first.metrics.vehicle_idle_minutes == queued_minutes + stranded_minutes
+    charge_sessions = (
+        first.vehicle_ticks["drove_this_tick"]
+        & (first.vehicle_ticks["charged_this_tick"] | first.vehicle_ticks["queued_this_tick"])
+    ).sum()
+    assert first.metrics.avg_wait_minutes == pytest.approx(
+        queued_minutes / charge_sessions if charge_sessions else 0.0
+    )
     pd.testing.assert_frame_equal(first.vehicle_ticks, second.vehicle_ticks)

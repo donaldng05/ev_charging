@@ -13,7 +13,7 @@ def build_metrics(
     energy_usage_kwh: float,
     occupied_charger_ticks: int,
     available_charger_ticks: int,
-    idle_vehicle_ticks: int,
+    policy_delay_vehicle_ticks: int,
     timestep_minutes: int,
 ) -> SimMetrics:
     """Convert engine counters to comparable run metrics."""
@@ -26,5 +26,5 @@ def build_metrics(
         soc_violations=soc_violations,
         energy_usage_kwh=energy_usage_kwh,
         station_utilization=occupied_charger_ticks / utilization_denominator,
-        vehicle_idle_minutes=idle_vehicle_ticks * timestep_minutes,
+        vehicle_idle_minutes=policy_delay_vehicle_ticks * timestep_minutes,
     )

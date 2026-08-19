@@ -23,13 +23,13 @@ def build_stations(
     *,
     seed: int,
 ) -> list[SimStation]:
-    """Create synthetic city stations sized from ACN mean connected duration."""
+    """Create synthetic city stations sized from ACN charging service time."""
     rng = np.random.default_rng(seed)
     arrival_rate_per_tick = spec.fleet_size * spec.trips_per_vehicle / spec.steps_per_day
-    mean_dwell_ticks = calibration.mean_duration_min / spec.timestep_minutes
+    mean_service_ticks = charging_service_ticks(spec, calibration)
     total_chargers = max(
         spec.n_stations * spec.n_chargers_min,
-        math.ceil(arrival_rate_per_tick * mean_dwell_ticks),
+        math.ceil(arrival_rate_per_tick * mean_service_ticks),
     )
     base, remainder = divmod(total_chargers, spec.n_stations)
     prices = np.linspace(
@@ -49,6 +49,15 @@ def build_stations(
         )
         for index in range(spec.n_stations)
     ]
+
+
+def charging_service_ticks(
+    spec: SimulationConfig,
+    calibration: CalibrationStats,
+) -> int:
+    """Convert mean delivered ACN energy to simulator charging ticks."""
+    energy_per_tick = spec.charger_power_kw * spec.timestep_minutes / 60.0
+    return max(1, math.ceil(calibration.mean_energy_kwh / energy_per_tick))
 
 
 def build_fleet(

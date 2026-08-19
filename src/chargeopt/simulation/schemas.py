@@ -13,6 +13,7 @@ class VehicleStatus(StrEnum):
     DRIVING = "driving"
     QUEUED = "queued"
     CHARGING = "charging"
+    STRANDED = "stranded"
 
 
 class SimStation(BaseModel):
@@ -64,6 +65,10 @@ class VehicleTick(BaseModel):
     trip_index: int = -1
     x_km: float
     y_km: float
+    drove_this_tick: bool
+    charged_this_tick: bool
+    queued_this_tick: bool
+    stranded_this_tick: bool
 
 
 class StationTick(BaseModel):
