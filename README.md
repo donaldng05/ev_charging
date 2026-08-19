@@ -37,6 +37,7 @@ uv run pre-commit install
 uv run chargeopt --help
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --seed 42
+uv run chargeopt simulate --config configs/default.yaml --all-seeds
 uv run chargeopt data pull
 uv run chargeopt data features
 uv run chargeopt models demand
@@ -49,10 +50,12 @@ The experiment runner is a placeholder until M5. It already loads and validates 
 
 `chargeopt simulate` reads the normalized ACN session snapshot, calibrates a
 synthetic 10-station world, and runs the configured 30-vehicle fleet for 96
-15-minute ticks. It writes gitignored station, vehicle-tick, station-tick, and
-run-metric CSV artifacts under `data/processed/`. Vehicle-tick activity flags
-make driving, charging, queued, and stranded time auditable even when status
-changes within one tick.
+15-minute ticks. Default mode writes one seed. `--all-seeds` runs every
+`experiment.seeds` value under home-station routing plus one concentrated-routing
+probe, writes `data/processed/sim_metrics.csv` (one row per seed and routing),
+and prints the frozen normal-scenario calibration gate. Vehicle-tick activity
+flags make driving, charging, queued, and stranded time auditable even when
+status changes within one tick.
 
 `chargeopt models demand` reads the processed 15-minute demand CSV and writes
 gitignored prediction, metrics, and error-slice artifacts.
