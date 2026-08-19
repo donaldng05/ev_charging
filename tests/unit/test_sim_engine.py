@@ -220,6 +220,14 @@ def test_seeded_default_run_has_30_vehicles_and_96_ticks() -> None:
     assert first.metrics == second.metrics
     charging_ticks = first.station_ticks.loc[first.station_ticks["energy_delivered_kwh"] > 0]
     assert (charging_ticks["occupancy"] > 0).all()
+    queued_vehicle_ticks = int(first.vehicle_ticks["queued_this_tick"].sum())
+    assert int(first.station_ticks["queue_len"].sum()) == queued_vehicle_ticks
+    occupancy_limit = first.station_ticks.merge(
+        first.stations[["station_id", "n_chargers"]],
+        on="station_id",
+        how="left",
+    )
+    assert (occupancy_limit["occupancy"] <= occupancy_limit["n_chargers"]).all()
     expected_utilization = first.station_ticks["occupancy"].sum() / (
         first.stations["n_chargers"].sum() * 96
     )
