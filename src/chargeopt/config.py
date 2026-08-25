@@ -117,6 +117,25 @@ class StressConfig(BaseModel):
     station_availability: float = Field(gt=0, le=1)
 
 
+class PolicyScoringConfig(BaseModel):
+    """Frozen weights for the deterministic ML-informed station score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    distance_weight: float = Field(ge=0)
+    price_weight: float = Field(ge=0)
+    queue_weight: float = Field(ge=0)
+    forecast_weight: float = Field(ge=0)
+    forecast_scale_kwh: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_nonzero_score(self) -> Self:
+        if self.distance_weight + self.price_weight + self.queue_weight <= 0:
+            msg = "at least one station score weight must be positive"
+            raise ValueError(msg)
+        return self
+
+
 LEARNER_NAMES: tuple[str, ...] = (
     "random_forest",
     "ridge",
@@ -392,6 +411,7 @@ class AppConfig(BaseModel):
     data: DataConfig
     experiment: ExperimentConfig
     stress: StressConfig
+    optimization: PolicyScoringConfig
     models: ModelsConfig
     logging: LoggingConfig = LoggingConfig()
 

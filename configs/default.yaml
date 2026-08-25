@@ -51,6 +51,13 @@ stress:
   temperature_c: -10.0
   station_availability: 0.8
 
+optimization:
+  distance_weight: 1.0
+  price_weight: 1.0
+  queue_weight: 1.0
+  forecast_weight: 1.0
+  forecast_scale_kwh: 10.0
+
 models:
   demand:
     horizon_minutes: 60
