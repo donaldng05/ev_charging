@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime, time, timedelta
@@ -78,6 +79,18 @@ def _parse_policy(value: str) -> PolicyName:
     return POLICY_ALIASES[key]
 
 
+def _parse_positive_finite_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        msg = f"expected a positive finite number, got {value!r}"
+        raise argparse.ArgumentTypeError(msg) from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        msg = f"expected a positive finite number, got {value!r}"
+        raise argparse.ArgumentTypeError(msg)
+    return parsed
+
+
 def _add_learner_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--learner",
@@ -143,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=_parse_policy,
         default=None,
         help="M4 station policy: nearest, cheapest, ml / ml_informed (default: M3 home routing).",
+    )
+    simulate.add_argument(
+        "--trip-rate-multiplier",
+        type=_parse_positive_finite_float,
+        default=None,
+        help="Override configured trip load multiplier for this simulation.",
     )
     simulate.add_argument(
         "--all-seeds",
@@ -272,6 +291,11 @@ def run_experiment(args: argparse.Namespace) -> int:
 
 def run_simulate(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
+    if args.trip_rate_multiplier is not None:
+        simulation = config.simulation.model_copy(
+            update={"trip_rate_multiplier": args.trip_rate_multiplier}
+        )
+        config = config.model_copy(update={"simulation": simulation})
     if args.all_seeds and args.policy is not None:
         msg = "--policy cannot be combined with --all-seeds; use one policy per simulation"
         raise ValueError(msg)
@@ -294,6 +318,7 @@ def run_simulate(args: argparse.Namespace) -> int:
         payload = {
             "status": "ok",
             "gate_passed": report.gate["gate_passed"],
+            "trip_rate_multiplier": config.simulation.trip_rate_multiplier,
             "n_ticks": config.simulation.steps_per_day,
             "n_vehicles": config.simulation.fleet_size,
             "home": {
@@ -343,6 +368,7 @@ def run_simulate(args: argparse.Namespace) -> int:
         "status": "ok",
         "seed": seed,
         "policy": args.policy.value if args.policy is not None else "home",
+        "trip_rate_multiplier": config.simulation.trip_rate_multiplier,
         "n_ticks": config.simulation.steps_per_day,
         "n_vehicles": config.simulation.fleet_size,
         "metrics": result.metrics.model_dump(),

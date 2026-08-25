@@ -40,7 +40,7 @@ def run_simulation(
     seed: int,
     chooser: StationChooser | None = None,
     temperature_c: float | None = None,
-    trip_rate_multiplier: float = 1.0,
+    trip_rate_multiplier: float | None = None,
 ) -> SimResult:
     """Calibrate, construct, and run one seeded synthetic fleet day."""
     simulation = config.simulation
@@ -59,7 +59,11 @@ def run_simulation(
         temperature_c=(
             config.models.energy.temperature_mean_c if temperature_c is None else temperature_c
         ),
-        trip_rate_multiplier=trip_rate_multiplier,
+        trip_rate_multiplier=(
+            simulation.trip_rate_multiplier
+            if trip_rate_multiplier is None
+            else trip_rate_multiplier
+        ),
     )
     return run_world(
         simulation,

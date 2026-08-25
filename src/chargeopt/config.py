@@ -5,6 +5,7 @@ MVP numbers live in YAML. Code must not hardcode fleet size, timestep, or horizo
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -44,6 +45,7 @@ class SimulationConfig(BaseModel):
     soc_min: float = Field(ge=0, le=1)
     soc_charge_target: float = Field(ge=0, le=1)
     trips_per_vehicle: int = Field(ge=1)
+    trip_rate_multiplier: float = Field(gt=0)
     metro_span_km: float = Field(gt=0)
     price_per_kwh_min: float = Field(ge=0)
     price_per_kwh_max: float = Field(ge=0)
@@ -59,6 +61,14 @@ class SimulationConfig(BaseModel):
     def timestep_must_divide_hour(cls, value: int) -> int:
         if value not in (15, 30):
             msg = "timestep_minutes must be 15 or 30 for MVP"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("trip_rate_multiplier")
+    @classmethod
+    def trip_rate_multiplier_must_be_finite(cls, value: float) -> float:
+        if not math.isfinite(value):
+            msg = "trip_rate_multiplier must be finite"
             raise ValueError(msg)
         return value
 
