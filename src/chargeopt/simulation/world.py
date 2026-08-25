@@ -51,6 +51,32 @@ def build_stations(
     ]
 
 
+def apply_station_availability(
+    stations: list[SimStation],
+    *,
+    availability: float,
+    seed: int,
+) -> list[SimStation]:
+    """Disable a deterministic fraction of stations for a stress scenario."""
+    if not math.isfinite(availability) or not 0 < availability <= 1:
+        msg = "station availability must be finite and in (0, 1]"
+        raise ValueError(msg)
+    if not stations:
+        msg = "at least one station is required"
+        raise ValueError(msg)
+    active_count = max(1, math.ceil(len(stations) * availability))
+    rng = np.random.default_rng(seed)
+    active_indices = set(
+        int(index) for index in rng.choice(len(stations), size=active_count, replace=False)
+    )
+    return [
+        station.model_copy(
+            update={"n_chargers": station.n_chargers if index in active_indices else 0}
+        )
+        for index, station in enumerate(stations)
+    ]
+
+
 def charging_service_ticks(
     spec: SimulationConfig,
     calibration: CalibrationStats,

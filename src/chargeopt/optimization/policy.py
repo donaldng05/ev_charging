@@ -39,24 +39,37 @@ class HomeStationChooser:
         queues: Mapping[str, tuple[str, ...]],
     ) -> str:
         del tick, occupancy, queues
-        station_ids = {station.station_id for station in stations}
-        if vehicle.home_station_id not in station_ids:
+        station_by_id = {station.station_id: station for station in stations}
+        home = station_by_id.get(vehicle.home_station_id)
+        if home is None:
             msg = f"unknown home station {vehicle.home_station_id!r}"
             raise ValueError(msg)
-        return vehicle.home_station_id
+        if home.n_chargers > 0:
+            return home.station_id
+        active_stations = [station for station in stations if station.n_chargers > 0]
+        if not active_stations:
+            msg = "at least one station is required"
+            raise ValueError(msg)
+        return min(
+            active_stations,
+            key=lambda station: (_distance(vehicle, station), station.station_id),
+        ).station_id
 
 
 def _candidate_stations(
     stations: Sequence[SimStation],
     occupancy: Mapping[str, int],
 ) -> list[SimStation]:
-    if not stations:
+    active_stations = [station for station in stations if station.n_chargers > 0]
+    if not active_stations:
         msg = "at least one station is required"
         raise ValueError(msg)
     available = [
-        station for station in stations if occupancy.get(station.station_id, 0) < station.n_chargers
+        station
+        for station in active_stations
+        if occupancy.get(station.station_id, 0) < station.n_chargers
     ]
-    return available or list(stations)
+    return available or active_stations
 
 
 def _distance(vehicle: VehicleState, station: SimStation) -> float:
@@ -182,7 +195,11 @@ class ConcentratedStationChooser:
         queues: Mapping[str, tuple[str, ...]],
     ) -> str:
         del vehicle, tick, occupancy, queues
-        return min(station.station_id for station in stations)
+        candidates = [station for station in stations if station.n_chargers > 0]
+        if not candidates:
+            msg = "at least one station is required"
+            raise ValueError(msg)
+        return min(station.station_id for station in candidates)
 
 
 def build_station_chooser(

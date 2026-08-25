@@ -22,7 +22,7 @@ class SimStation(BaseModel):
     station_id: str
     x_km: float
     y_km: float
-    n_chargers: int = Field(ge=1)
+    n_chargers: int = Field(ge=0)
     power_kw: float = Field(gt=0)
     price_per_kwh: float = Field(ge=0)
 
