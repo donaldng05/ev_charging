@@ -8,6 +8,7 @@ import pytest
 
 from chargeopt.config import load_config
 from chargeopt.data.io import read_sessions_csv
+from chargeopt.optimization import StationChooser
 from chargeopt.simulation.engine import run_simulation, run_world
 from chargeopt.simulation.schemas import FleetTrip, SimStation, VehicleState, VehicleStatus
 
@@ -204,6 +205,34 @@ def test_same_tick_charging_is_not_counted_as_policy_delay() -> None:
     assert not first_tick["queued_this_tick"]
     assert not first_tick["stranded_this_tick"]
     assert result.metrics.vehicle_idle_minutes == 0
+
+
+def test_run_world_accepts_custom_optimization_chooser() -> None:
+    class FixedChooser:
+        def choose(
+            self,
+            vehicle: VehicleState,
+            stations: list[SimStation],
+            *,
+            tick: int,
+            occupancy: dict[str, int],
+            queues: dict[str, tuple[str, ...]],
+        ) -> str:
+            del vehicle, tick, occupancy, queues
+            return stations[0].station_id
+
+    chooser: StationChooser = FixedChooser()
+    result = run_world(
+        _simulation(fleet_size=1),
+        stations=[_station()],
+        vehicles=_vehicles(1),
+        trips=[_trip("vehicle-000")],
+        seed=42,
+        timezone_name="America/Los_Angeles",
+        chooser=chooser,
+    )
+
+    assert result.metrics.soc_violations == 0
 
 
 def test_seeded_default_run_has_30_vehicles_and_96_ticks() -> None:

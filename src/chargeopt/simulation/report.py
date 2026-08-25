@@ -8,8 +8,8 @@ from typing import TypedDict
 import pandas as pd
 
 from chargeopt.config import AppConfig
+from chargeopt.optimization.policy import ConcentratedStationChooser, HomeStationChooser
 from chargeopt.simulation.engine import SimResult, run_simulation
-from chargeopt.simulation.policy import ConcentratedStationChooser, HomeStationChooser
 
 HOME_ROUTING = "home"
 CONCENTRATED_ROUTING = "concentrated"

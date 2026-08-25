@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from chargeopt.config import AppConfig, SimulationConfig
+from chargeopt.optimization.policy import HomeStationChooser, StationChooser
 from chargeopt.simulation.calibration import calibrate_from_sessions
 from chargeopt.simulation.metrics import build_metrics
-from chargeopt.simulation.policy import HomeStationChooser, StationChooser
 from chargeopt.simulation.schemas import (
     FleetTrip,
     SimMetrics,

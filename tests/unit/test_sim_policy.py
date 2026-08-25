@@ -2,7 +2,13 @@
 
 import pytest
 
-from chargeopt.simulation.policy import ConcentratedStationChooser, HomeStationChooser
+from chargeopt.optimization import ConcentratedStationChooser, HomeStationChooser
+from chargeopt.simulation.policy import (
+    ConcentratedStationChooser as LegacyConcentratedStationChooser,
+)
+from chargeopt.simulation.policy import (
+    HomeStationChooser as LegacyHomeStationChooser,
+)
 from chargeopt.simulation.schemas import SimStation, VehicleState, VehicleStatus
 
 
@@ -42,6 +48,11 @@ def test_home_chooser_returns_assigned_station() -> None:
     )
 
     assert chosen == "sim-01"
+
+
+def test_simulation_policy_imports_remain_compatible() -> None:
+    assert LegacyHomeStationChooser is HomeStationChooser
+    assert LegacyConcentratedStationChooser is ConcentratedStationChooser
 
 
 def test_home_chooser_rejects_unknown_home_station() -> None:
