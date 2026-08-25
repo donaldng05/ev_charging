@@ -55,6 +55,25 @@ def test_experiment_id_changes_with_seed() -> None:
     assert a != b
 
 
+def test_experiment_id_changes_with_scenario() -> None:
+    config = load_config()
+    normal = experiment_id(
+        config,
+        seed=42,
+        policy=PolicyName.NEAREST,
+        commit_sha="abc",
+        scenario="normal",
+    )
+    stress = experiment_id(
+        config,
+        seed=42,
+        policy=PolicyName.NEAREST,
+        commit_sha="abc",
+        scenario="stress",
+    )
+    assert normal != stress
+
+
 def test_git_sha_is_string_or_none() -> None:
     sha = git_sha()
     assert sha is None or (isinstance(sha, str) and len(sha) >= 7)

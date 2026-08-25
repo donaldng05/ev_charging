@@ -47,6 +47,7 @@ def test_experiment_defaults_to_full_matrix() -> None:
 
     assert args.policy is None
     assert args.seed is None
+    assert args.stress is False
 
 
 def test_data_pull_writes_csv(

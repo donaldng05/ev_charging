@@ -43,6 +43,9 @@ def test_default_config_round_trip() -> None:
     assert config.simulation.metrics_path.as_posix() == "data/processed/sim_metrics.csv"
     assert config.evaluation.confidence_level == 0.95
     assert config.evaluation.raw_results_path.as_posix() == "data/processed/evaluation_results.csv"
+    assert (
+        config.evaluation.robustness_path.as_posix() == "data/processed/evaluation_robustness.csv"
+    )
     assert set(config.experiment.policies) >= {
         PolicyName.NEAREST,
         PolicyName.CHEAPEST,
@@ -96,6 +99,10 @@ def test_congestion_profile_loads_with_separate_artifacts() -> None:
     assert (
         config.evaluation.summary_path.as_posix()
         == "data/processed/congestion_evaluation_summary.csv"
+    )
+    assert (
+        config.evaluation.robustness_path.as_posix()
+        == "data/processed/congestion_evaluation_robustness.csv"
     )
 
 
