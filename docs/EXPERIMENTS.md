@@ -105,7 +105,7 @@ acceptance signal is visible queue exposure, zero SOC violations, and lower
 aggregate wait/idle time for ML-informed routing than for the cheapest baseline.
 This remains a repeatable M4 scenario loop, not the M5 ranking/reporting system.
 
-## Stress scenario
+## M6 stress scenario
 
 After the IID comparison, take the same policies under:
 
@@ -117,23 +117,34 @@ Report degradation vs the normal scenario:
 
 `robustness_ratio = performance_stress / performance_normal`
 
-A useful MVP result can be: the policy works under IID conditions and degrades under a demand spike. That is allowed. Pretending robustness is solved is not.
+A useful MVP result can be: the policy works under IID conditions and degrades
+under a demand spike. That is allowed. Pretending robustness is solved is not.
+The official M6 baseline is `configs/default.yaml`; `configs/congestion.yaml`
+remains the separate M4 load profile.
 
-## Command shape (M5)
+## Command shape (M5–M6)
 
 ```text
 uv run chargeopt experiment --config configs/default.yaml
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
+uv run chargeopt experiment --config configs/default.yaml --stress
+uv run chargeopt experiment --config configs/default.yaml --stress --policy ml --seed 42
 ```
 
 Without filters, the command runs every configured policy across every
 configured seed. `--policy` and `--seed` select explicit subsets. It writes
-three ignored artifacts configured under `evaluation`:
+Without `--stress`, the command writes three ignored artifacts configured under
+`evaluation`:
 
 - raw policy/seed results, one row per run;
 - policy/metric summary statistics;
 - metadata containing the resolved config, config hash, Git SHA, selected
   policies/seeds, and metric direction rules.
+
+With `--stress`, raw and summary rows add `scenario` (`normal` or `stress`) and
+a fourth ignored robustness artifact is written. Its paired deltas are
+`stress - normal`, with a 95% normal interval over matching seed differences.
+Its ratio is `stress_mean / normal_mean`; zero normal means use `NA`.
 
 The summary uses sample standard deviation and a 95% normal-approximation
 interval. Worst case is the maximum for cost, wait, violations, energy usage,

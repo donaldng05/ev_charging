@@ -37,6 +37,7 @@ uv run pre-commit install
 uv run chargeopt --help
 uv run chargeopt experiment --config configs/default.yaml
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
+uv run chargeopt experiment --config configs/default.yaml --stress
 uv run chargeopt simulate --config configs/default.yaml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
 uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
@@ -60,6 +61,12 @@ worst case, and a 95% normal-approximation confidence interval. M4 policy
 simulations still run one policy at a time through `chargeopt simulate --policy`;
 `ml` is an alias for `ml_informed` and consumes the configured Random Forest
 demand forecast.
+
+Add `--stress` for the official M6 paired comparison. It runs normal and stress
+rows for every selected policy/seed, using demand ×1.5, −10°C, and 80% active
+station availability. It additionally writes the paired robustness CSV with
+signed stress-minus-normal deltas, paired confidence intervals, and stress /
+normal ratios. The CLI reports all artifact paths and matrix counts.
 
 `chargeopt simulate` reads the normalized ACN session snapshot, calibrates a
 synthetic 10-station world, and runs the configured 30-vehicle fleet for 96
