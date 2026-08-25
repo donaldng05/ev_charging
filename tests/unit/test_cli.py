@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from chargeopt.cli import main
+from chargeopt.cli import build_parser, main
 from chargeopt.config import LEARNER_NAMES
 from chargeopt.models.io import write_demand_predictions
 
@@ -248,6 +248,7 @@ def test_simulate_writes_structured_artifacts(
     assert payload["seed"] == 42
     assert payload["n_ticks"] == 96
     assert payload["n_vehicles"] == 30
+    assert payload["trip_rate_multiplier"] == 1.0
     assert set(payload["metrics"]) == {
         "seed",
         "energy_cost",
@@ -267,6 +268,30 @@ def test_simulate_writes_structured_artifacts(
     } <= run_columns
     metrics_header = set(metrics.read_text(encoding="utf-8").splitlines()[0].split(","))
     assert {"routing", "peak_queue"} <= metrics_header
+
+    assert (
+        main(
+            [
+                "simulate",
+                "--config",
+                str(config_path),
+                "--seed",
+                "42",
+                "--trip-rate-multiplier",
+                "2.0",
+            ]
+        )
+        == 0
+    )
+    overridden_payload = json.loads(capsys.readouterr().out)
+    assert overridden_payload["trip_rate_multiplier"] == 2.0
+
+
+def test_cli_rejects_nonpositive_or_nonfinite_trip_multiplier() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["simulate", "--trip-rate-multiplier", "0"])
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["simulate", "--trip-rate-multiplier", "nan"])
 
 
 def test_simulate_runs_each_m4_policy_and_ml_uses_forecast(

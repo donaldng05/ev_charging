@@ -235,3 +235,21 @@ def test_all_m4_policies_are_deterministic_for_a_seeded_world() -> None:
         first = run_simulation(config, sessions=sessions, seed=42, chooser=chooser)
         second = run_simulation(config, sessions=sessions, seed=42, chooser=chooser)
         assert first.metrics == second.metrics
+
+
+def test_congestion_profile_makes_policy_queue_behavior_visible_on_fixture() -> None:
+    config = load_config(Path("configs/congestion.yaml"))
+    sessions = read_sessions_csv(Path("tests/fixtures/acn_sessions.csv"))
+    forecast = {tick: 1.0 for tick in range(config.simulation.steps_per_day)}
+
+    for policy in config.experiment.policies:
+        chooser = build_station_chooser(
+            policy,
+            scoring=config.optimization,
+            forecast_by_tick=forecast if policy is PolicyName.ML_INFORMED else None,
+        )
+        result = run_simulation(config, sessions=sessions, seed=42, chooser=chooser)
+
+        assert result.metrics.station_utilization > 0.30
+        assert result.metrics.avg_wait_minutes > 0.0
+        assert result.metrics.soc_violations == 0

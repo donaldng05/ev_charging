@@ -31,6 +31,7 @@ def test_default_config_round_trip() -> None:
     assert config.simulation.soc_min == 0.1
     assert config.simulation.soc_charge_target == 0.9
     assert config.simulation.trips_per_vehicle == 2
+    assert config.simulation.trip_rate_multiplier == 1.0
     assert config.simulation.metro_span_km == 12.0
     assert config.simulation.price_per_kwh_min == 0.20
     assert config.simulation.price_per_kwh_max == 0.45
@@ -83,6 +84,15 @@ def test_load_config_from_explicit_path(tmp_path: Path) -> None:
     assert config.simulation.region == "caltech_hybrid"
 
 
+def test_congestion_profile_loads_with_separate_artifacts() -> None:
+    config = load_config(Path("configs/congestion.yaml"))
+
+    assert config.simulation.trip_rate_multiplier == 7.0
+    assert config.simulation.region == "caltech_hybrid_congestion"
+    assert config.simulation.run_path.as_posix() == "data/processed/congestion_sim_run.csv"
+    assert config.simulation.metrics_path.as_posix() == "data/processed/congestion_sim_metrics.csv"
+
+
 def test_missing_key_fails(tmp_path: Path) -> None:
     path = tmp_path / "bad.yaml"
     path.write_text("simulation:\n  region: x\n", encoding="utf-8")
@@ -103,6 +113,17 @@ def test_invalid_timestep_fails() -> None:
     payload = config.model_dump(mode="json")
     payload["simulation"]["timestep_minutes"] = 5
     with pytest.raises(ValidationError):
+        AppConfig.model_validate(payload)
+
+
+def test_trip_rate_multiplier_must_be_positive_and_finite() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["simulation"]["trip_rate_multiplier"] = 0.0
+    with pytest.raises(ValidationError, match="trip_rate_multiplier"):
+        AppConfig.model_validate(payload)
+
+    payload["simulation"]["trip_rate_multiplier"] = float("inf")
+    with pytest.raises(ValidationError, match="finite"):
         AppConfig.model_validate(payload)
 
 

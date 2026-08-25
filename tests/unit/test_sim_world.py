@@ -115,6 +115,28 @@ def test_trip_generation_is_seeded_ordered_and_within_horizon() -> None:
         )
 
 
+def test_trip_rate_multiplier_scales_effective_itinerary_size() -> None:
+    config = load_config()
+    calibration = calibrate_from_sessions(
+        read_sessions_csv(FIXTURE),
+        timestep_minutes=config.simulation.timestep_minutes,
+    )
+    stations = build_stations(config.simulation, calibration, seed=42)
+    vehicles = build_fleet(config.simulation, stations)
+
+    trips = build_trips(
+        config.simulation,
+        config.models.energy,
+        calibration,
+        vehicles,
+        seed=42,
+        temperature_c=config.models.energy.temperature_mean_c,
+        trip_rate_multiplier=7.0,
+    )
+
+    assert len(trips) == config.simulation.fleet_size * 14
+
+
 def test_repair_departures_keeps_late_itinerary_inside_horizon() -> None:
     durations = np.asarray([1, 2])
 
