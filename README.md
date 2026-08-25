@@ -37,6 +37,9 @@ uv run pre-commit install
 uv run chargeopt --help
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy ml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --all-seeds
 uv run chargeopt data pull
 uv run chargeopt data features
@@ -46,7 +49,7 @@ uv run chargeopt models tune demand
 uv run chargeopt models tune energy
 ```
 
-The experiment runner is a placeholder until M5. It already loads and validates `configs/default.yaml`, seeds the process, and prints a stable experiment id.
+The experiment runner is a placeholder until M5. It already loads and validates `configs/default.yaml`, seeds the process, and prints a stable experiment id. M4 policy simulations run one policy at a time through `chargeopt simulate --policy`; `ml` is an alias for `ml_informed` and consumes the configured Random Forest demand forecast.
 
 `chargeopt simulate` reads the normalized ACN session snapshot, calibrates a
 synthetic 10-station world, and runs the configured 30-vehicle fleet for 96

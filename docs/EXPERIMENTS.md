@@ -28,6 +28,18 @@ Run each policy across the configured seeds (10 by default). Report mean, standa
 
 The comparison that matters is nearest vs ML-informed, with cheapest as a second baseline. Everything except the policy stays identical.
 
+During M4, run one policy through the common simulator interface at a time:
+
+```text
+uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy ml --seed 42
+```
+
+The M4 command reports the selected policy and writes the usual per-run
+simulation artifacts. It does not yet rank policies across seeds; the
+multi-seed comparison and reproducibility metadata are M5 responsibilities.
+
 ## Metrics
 
 | Metric | Meaning |

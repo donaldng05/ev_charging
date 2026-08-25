@@ -38,13 +38,23 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 - Trip energy starts from a fixed-rate baseline (`kWh/km`) plus an ML regressor once M2 lands.
 - M3 uses the same noise-free rate × distance × cold-penalty relationship used
   to generate M2 training targets. Fitted estimators are not serialized.
-- Demand forecasting predicts next-hour station energy demand, not individual sessions.
+- Demand forecasting predicts next-hour site energy demand, not individual sessions.
 - Vehicle telemetry is synthetic. Charging demand is calibrated from public ACN-Data (Caltech). That distinction stays explicit.
 
 ## Decisions
 
 - Policies are deterministic scores. No RL, MPC, or stochastic optimization in MVP 1.
 - The ML-informed policy may use demand forecasts as a congestion feature. That is the only required ML → decision link.
+- M4 policy weights are frozen in `configs/default.yaml` under `optimization`.
+  Distance, price, and queue features are min-max normalized among candidate
+  stations; ties resolve lexicographically by `station_id`.
+- Because the demand forecast is site-level, not station-level, the ML-informed
+  policy applies forecast pressure to the current queue term rather than
+  inventing station-specific predictions: `clamp(predicted_kwh /
+  forecast_scale_kwh, 0, 1)`.
+- A policy considers stations with free chargers first. If all stations are
+  full, it ranks all stations and allows the simulator's FIFO queue to record
+  the resulting wait.
 
 ## Evaluation
 

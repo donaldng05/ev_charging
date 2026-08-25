@@ -36,7 +36,7 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC, simulation mechanics |
 | `chargeopt.optimization` | M3–M4 | Station-selection contract and nearest / cheapest / ML-informed policies |
 | `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
-| `chargeopt.cli` | M0–M3 / M5 | `chargeopt simulate`, `experiment`, `data pull|features`, `models demand|energy|tune` |
+| `chargeopt.cli` | M0–M4 / M5 | `chargeopt simulate`, M4 policy selection, `experiment`, `data pull|features`, `models demand|energy|tune` |
 
 Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not hardcode fleet size, timestep, or horizon.
 
@@ -63,6 +63,18 @@ probe is not an M4 policy. M4 adds nearest, cheapest, and ML-informed policies
 without changing simulation mechanics. The former `chargeopt.simulation.policy`
 module remains a compatibility import for existing callers. ACN EVSE
 identifiers are never used as geo-distributed simulator station identifiers.
+
+M4 adds nearest, cheapest, and ML-informed choosers without changing the world
+transition mechanics. Policies first consider stations with free charger
+capacity, then fall back to all stations when every charger is occupied so FIFO
+queue behavior remains observable. Distance, price, and queue features are
+normalized within the candidate set and ties resolve by `station_id`.
+
+The demand forecast is site-level rather than station-specific. The
+ML-informed policy therefore uses the forecast to scale the current queue
+penalty: `forecast_pressure = clamp(predicted_kwh / forecast_scale_kwh, 0, 1)`.
+Forecast loading stays in the CLI/integration layer; policy classes receive
+plain tick-indexed numeric values and do not import model-training code.
 
 ## Out of MVP 1
 
