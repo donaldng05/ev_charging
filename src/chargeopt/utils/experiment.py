@@ -26,6 +26,16 @@ def git_sha() -> str | None:
     return sha or None
 
 
+def config_hash(config: AppConfig) -> str:
+    """Return the full SHA-256 hash of the canonical resolved configuration."""
+    encoded = json.dumps(
+        config.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def experiment_id(
     config: AppConfig,
     *,
@@ -34,7 +44,7 @@ def experiment_id(
     commit_sha: str | None = None,
 ) -> str:
     payload = {
-        "config": config.model_dump(mode="json"),
+        "config_hash": config_hash(config),
         "seed": seed,
         "policy": policy.value,
         "git_sha": commit_sha or "unknown",

@@ -47,6 +47,12 @@ experiment:
     - vehicle_idle_minutes
   seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
 
+evaluation:
+  raw_results_path: data/processed/evaluation_results.csv
+  summary_path: data/processed/evaluation_summary.csv
+  metadata_path: data/processed/evaluation_metadata.json
+  confidence_level: 0.95
+
 stress:
   demand_multiplier: 1.5
   temperature_c: -10.0

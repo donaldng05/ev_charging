@@ -41,6 +41,8 @@ def test_default_config_round_trip() -> None:
     assert config.simulation.run_path.as_posix() == "data/processed/sim_run.csv"
     assert config.simulation.station_ticks_path.as_posix() == "data/processed/sim_station_ticks.csv"
     assert config.simulation.metrics_path.as_posix() == "data/processed/sim_metrics.csv"
+    assert config.evaluation.confidence_level == 0.95
+    assert config.evaluation.raw_results_path.as_posix() == "data/processed/evaluation_results.csv"
     assert set(config.experiment.policies) >= {
         PolicyName.NEAREST,
         PolicyName.CHEAPEST,
@@ -91,6 +93,10 @@ def test_congestion_profile_loads_with_separate_artifacts() -> None:
     assert config.simulation.region == "caltech_hybrid_congestion"
     assert config.simulation.run_path.as_posix() == "data/processed/congestion_sim_run.csv"
     assert config.simulation.metrics_path.as_posix() == "data/processed/congestion_sim_metrics.csv"
+    assert (
+        config.evaluation.summary_path.as_posix()
+        == "data/processed/congestion_evaluation_summary.csv"
+    )
 
 
 def test_missing_key_fails(tmp_path: Path) -> None:

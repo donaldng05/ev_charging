@@ -119,6 +119,17 @@ class ExperimentConfig(BaseModel):
         return value
 
 
+class EvaluationConfig(BaseModel):
+    """Reproducible M5 evaluation artifact settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    raw_results_path: Path
+    summary_path: Path
+    metadata_path: Path
+    confidence_level: float = Field(gt=0, lt=1)
+
+
 class StressConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -420,6 +431,7 @@ class AppConfig(BaseModel):
     simulation: SimulationConfig
     data: DataConfig
     experiment: ExperimentConfig
+    evaluation: EvaluationConfig
     stress: StressConfig
     optimization: PolicyScoringConfig
     models: ModelsConfig
