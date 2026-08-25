@@ -89,6 +89,11 @@ and search grids live under `models.demand.learners` / `models.energy.learners`
 in [`configs/default.yaml`](../configs/default.yaml). M4 lookup uses
 `models.demand.decision_model` (currently `random_forest`).
 
+The current demand forecast is one site-level Caltech series, not a forecast per
+synthetic simulator station. M4 uses the configured decision-model prediction
+as a bounded future-congestion pressure that scales the current station queue
+penalty; it does not map ACN EVSE identifiers to synthetic station IDs.
+
 ## Demand prediction CSV
 
 Canonical artifact: `data/processed/demand_predictions.csv` (gitignored).

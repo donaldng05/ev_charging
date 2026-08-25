@@ -1,5 +1,7 @@
+# M4 congestion profile. Keep this aligned with default.yaml except for the
+# trip load multiplier and separate simulation artifact paths.
 simulation:
-  region: caltech_hybrid
+  region: caltech_hybrid_congestion
   fleet_size: 30
   n_stations: 10
   timestep_minutes: 15
@@ -10,16 +12,16 @@ simulation:
   soc_min: 0.1
   soc_charge_target: 0.9
   trips_per_vehicle: 2
-  trip_rate_multiplier: 1.0
+  trip_rate_multiplier: 7.0
   metro_span_km: 12.0
   price_per_kwh_min: 0.20
   price_per_kwh_max: 0.45
   n_chargers_min: 1
   start_day: "2018-09-05"
-  stations_path: data/processed/sim_stations.csv
-  run_path: data/processed/sim_run.csv
-  station_ticks_path: data/processed/sim_station_ticks.csv
-  metrics_path: data/processed/sim_metrics.csv
+  stations_path: data/processed/congestion_sim_stations.csv
+  run_path: data/processed/congestion_sim_run.csv
+  station_ticks_path: data/processed/congestion_sim_station_ticks.csv
+  metrics_path: data/processed/congestion_sim_metrics.csv
 
 data:
   site: caltech

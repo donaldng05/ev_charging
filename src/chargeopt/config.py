@@ -5,6 +5,7 @@ MVP numbers live in YAML. Code must not hardcode fleet size, timestep, or horizo
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -44,6 +45,7 @@ class SimulationConfig(BaseModel):
     soc_min: float = Field(ge=0, le=1)
     soc_charge_target: float = Field(ge=0, le=1)
     trips_per_vehicle: int = Field(ge=1)
+    trip_rate_multiplier: float = Field(gt=0)
     metro_span_km: float = Field(gt=0)
     price_per_kwh_min: float = Field(ge=0)
     price_per_kwh_max: float = Field(ge=0)
@@ -59,6 +61,14 @@ class SimulationConfig(BaseModel):
     def timestep_must_divide_hour(cls, value: int) -> int:
         if value not in (15, 30):
             msg = "timestep_minutes must be 15 or 30 for MVP"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("trip_rate_multiplier")
+    @classmethod
+    def trip_rate_multiplier_must_be_finite(cls, value: float) -> float:
+        if not math.isfinite(value):
+            msg = "trip_rate_multiplier must be finite"
             raise ValueError(msg)
         return value
 
@@ -115,6 +125,25 @@ class StressConfig(BaseModel):
     demand_multiplier: float = Field(gt=0)
     temperature_c: float
     station_availability: float = Field(gt=0, le=1)
+
+
+class PolicyScoringConfig(BaseModel):
+    """Frozen weights for the deterministic ML-informed station score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    distance_weight: float = Field(ge=0)
+    price_weight: float = Field(ge=0)
+    queue_weight: float = Field(ge=0)
+    forecast_weight: float = Field(ge=0)
+    forecast_scale_kwh: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def require_nonzero_score(self) -> Self:
+        if self.distance_weight + self.price_weight + self.queue_weight <= 0:
+            msg = "at least one station score weight must be positive"
+            raise ValueError(msg)
+        return self
 
 
 LEARNER_NAMES: tuple[str, ...] = (
@@ -392,6 +421,7 @@ class AppConfig(BaseModel):
     data: DataConfig
     experiment: ExperimentConfig
     stress: StressConfig
+    optimization: PolicyScoringConfig
     models: ModelsConfig
     logging: LoggingConfig = LoggingConfig()
 
