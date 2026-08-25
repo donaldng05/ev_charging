@@ -33,8 +33,8 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.data` | M1 | Load, validate, split |
 | `chargeopt.features` | M1–M2 | Demand and energy features |
 | `chargeopt.models` | M2 | Demand forecast + trip energy |
-| `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC |
-| `chargeopt.optimization` | M4 | Nearest / cheapest / ML-informed policies |
+| `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC, simulation mechanics |
+| `chargeopt.optimization` | M3–M4 | Station-selection contract and nearest / cheapest / ML-informed policies |
 | `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
 | `chargeopt.cli` | M0–M3 / M5 | `chargeopt simulate`, `experiment`, `data pull|features`, `models demand|energy|tune` |
 
@@ -56,12 +56,13 @@ city stations, generic EVs, and seeded daily itineraries. The 15-minute engine
 applies deterministic trip consumption, FIFO station queues, charger capacity,
 constant-rate charging, and SOC bounds for 96 ticks.
 
-The M3 station chooser sends each EV to its assigned home station through a
-small protocol boundary. `--all-seeds` also runs a concentrated-routing
-sensitivity probe that sends every vehicle to `sim-00`; that probe is not an
-M4 policy. M4 replaces the chooser with nearest, cheapest, and ML-informed
-policies without changing simulation mechanics. ACN EVSE identifiers are never
-used as geo-distributed simulator station identifiers.
+The M3 station chooser sends each EV to its assigned home station through the
+small `chargeopt.optimization` protocol boundary. `--all-seeds` also runs a
+concentrated-routing sensitivity probe that sends every vehicle to `sim-00`; that
+probe is not an M4 policy. M4 adds nearest, cheapest, and ML-informed policies
+without changing simulation mechanics. The former `chargeopt.simulation.policy`
+module remains a compatibility import for existing callers. ACN EVSE
+identifiers are never used as geo-distributed simulator station identifiers.
 
 ## Out of MVP 1
 

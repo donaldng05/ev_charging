@@ -6,6 +6,7 @@ import pandas as pd
 
 from chargeopt.simulation.engine import SimResult
 from chargeopt.simulation.report import HOME_ROUTING, metrics_row
+from chargeopt.utils.io import select_columns, write_csv
 
 STATION_COLUMNS: tuple[str, ...] = (
     "station_id",
@@ -89,12 +90,7 @@ def read_sim_metrics(path: Path) -> pd.DataFrame:
 
 
 def _write(frame: pd.DataFrame, path: Path, columns: tuple[str, ...]) -> None:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        msg = f"simulation artifact missing columns: {missing}"
-        raise ValueError(msg)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    frame.loc[:, list(columns)].to_csv(path, index=False)
+    write_csv(frame, path, columns=columns, label="simulation artifact")
 
 
 def _read(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
@@ -102,8 +98,4 @@ def _read(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
         msg = f"simulation artifact not found: {path}"
         raise FileNotFoundError(msg)
     frame = pd.read_csv(path)
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        msg = f"simulation artifact missing columns: {missing}"
-        raise ValueError(msg)
-    return frame.loc[:, list(columns)]
+    return select_columns(frame, columns, label="simulation artifact")
