@@ -126,6 +126,7 @@ class EvaluationConfig(BaseModel):
 
     raw_results_path: Path
     summary_path: Path
+    robustness_path: Path
     metadata_path: Path
     confidence_level: float = Field(gt=0, lt=1)
 

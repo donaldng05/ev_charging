@@ -52,6 +52,7 @@ experiment:
 evaluation:
   raw_results_path: data/processed/congestion_evaluation_results.csv
   summary_path: data/processed/congestion_evaluation_summary.csv
+  robustness_path: data/processed/congestion_evaluation_robustness.csv
   metadata_path: data/processed/congestion_evaluation_metadata.json
   confidence_level: 0.95
 

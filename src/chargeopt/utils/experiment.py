@@ -42,11 +42,13 @@ def experiment_id(
     seed: int,
     policy: PolicyName,
     commit_sha: str | None = None,
+    scenario: str = "normal",
 ) -> str:
     payload = {
         "config_hash": config_hash(config),
         "seed": seed,
         "policy": policy.value,
+        "scenario": scenario,
         "git_sha": commit_sha or "unknown",
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))

@@ -28,7 +28,12 @@ from chargeopt.data.io import (
     write_demand_csv,
     write_trips_csv,
 )
-from chargeopt.evaluation import build_forecast_by_tick, run_evaluation, write_evaluation_artifacts
+from chargeopt.evaluation import (
+    ScenarioName,
+    build_forecast_by_tick,
+    run_evaluation,
+    write_evaluation_artifacts,
+)
 from chargeopt.features.demand import build_demand_table
 from chargeopt.features.energy import generate_synthetic_trips
 from chargeopt.models.demand import DEMAND_BASELINES, horizon_bins, train_and_predict_demand
@@ -140,6 +145,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Random seed (default: first seed in the config).",
+    )
+    experiment.add_argument(
+        "--stress",
+        action="store_true",
+        help="Run paired normal and declared stress scenarios.",
     )
 
     simulate = subparsers.add_parser(
@@ -275,6 +285,9 @@ def run_experiment(args: argparse.Namespace) -> int:
         sessions=sessions,
         policies=(args.policy,) if args.policy is not None else None,
         seeds=(args.seed,) if args.seed is not None else None,
+        scenarios=(
+            (ScenarioName.NORMAL, ScenarioName.STRESS) if args.stress else (ScenarioName.NORMAL,)
+        ),
     )
     paths = write_evaluation_artifacts(report, config)
     payload = {
@@ -282,6 +295,8 @@ def run_experiment(args: argparse.Namespace) -> int:
         "n_runs": len(report.raw_results),
         "n_policies": len(report.raw_results["policy"].unique()),
         "n_seeds": len(report.raw_results["seed"].unique()),
+        "n_scenarios": len(report.raw_results["scenario"].unique()),
+        "scenarios": report.metadata["scenarios"],
         "policies": report.metadata["policies"],
         "seeds": report.metadata["seeds"],
         "config_hash": report.metadata["config_hash"],
