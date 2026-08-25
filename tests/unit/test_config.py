@@ -48,6 +48,11 @@ def test_default_config_round_trip() -> None:
     assert config.stress.demand_multiplier == 1.5
     assert config.stress.temperature_c == -10.0
     assert config.stress.station_availability == 0.8
+    assert config.optimization.distance_weight == 1.0
+    assert config.optimization.price_weight == 1.0
+    assert config.optimization.queue_weight == 1.0
+    assert config.optimization.forecast_weight == 1.0
+    assert config.optimization.forecast_scale_kwh == 10.0
     assert config.data.site == "caltech"
     assert config.data.train_fraction + config.data.val_fraction < 1
     assert config.models.demand.horizon_minutes == 60
@@ -186,6 +191,22 @@ def test_price_min_must_not_exceed_max() -> None:
     payload["simulation"]["price_per_kwh_min"] = 0.50
     payload["simulation"]["price_per_kwh_max"] = 0.20
     with pytest.raises(ValidationError, match="price_per_kwh"):
+        AppConfig.model_validate(payload)
+
+
+def test_policy_scoring_requires_a_positive_station_weight() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["optimization"]["distance_weight"] = 0.0
+    payload["optimization"]["price_weight"] = 0.0
+    payload["optimization"]["queue_weight"] = 0.0
+    with pytest.raises(ValidationError, match="score weight"):
+        AppConfig.model_validate(payload)
+
+
+def test_policy_forecast_scale_must_be_positive() -> None:
+    payload = load_config().model_dump(mode="json")
+    payload["optimization"]["forecast_scale_kwh"] = 0.0
+    with pytest.raises(ValidationError, match="forecast_scale_kwh"):
         AppConfig.model_validate(payload)
 
 

@@ -6,8 +6,10 @@ import argparse
 import json
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -32,6 +34,8 @@ from chargeopt.features.energy import generate_synthetic_trips
 from chargeopt.models.demand import DEMAND_BASELINES, horizon_bins, train_and_predict_demand
 from chargeopt.models.energy import PHYSICS, evaluate_energy_cold_holdout, train_and_predict_energy
 from chargeopt.models.io import (
+    load_demand_forecast,
+    lookup_predicted_congestion,
     write_demand_predictions,
     write_energy_predictions,
     write_error_slices,
@@ -49,6 +53,7 @@ from chargeopt.models.tune import (
     tune_demand_learners,
     tune_energy_learners,
 )
+from chargeopt.optimization import build_station_chooser
 from chargeopt.simulation.engine import run_simulation
 from chargeopt.simulation.io import write_simulation_artifacts
 from chargeopt.simulation.report import run_calibration
@@ -133,6 +138,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run one seeded 24-hour synthetic fleet simulation.",
     )
     _add_config_and_seed(simulate)
+    simulate.add_argument(
+        "--policy",
+        type=_parse_policy,
+        default=None,
+        help="M4 station policy: nearest, cheapest, ml / ml_informed (default: M3 home routing).",
+    )
     simulate.add_argument(
         "--all-seeds",
         action="store_true",
@@ -261,6 +272,9 @@ def run_experiment(args: argparse.Namespace) -> int:
 
 def run_simulate(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
+    if args.all_seeds and args.policy is not None:
+        msg = "--policy cannot be combined with --all-seeds; use one policy per simulation"
+        raise ValueError(msg)
     sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
     stations_path = resolve_data_path(config.simulation.stations_path)
     run_path = resolve_data_path(config.simulation.run_path)
@@ -307,7 +321,17 @@ def run_simulate(args: argparse.Namespace) -> int:
 
     seed = _resolve_seed(args, config)
     set_seed(seed)
-    result = run_simulation(config, sessions=sessions, seed=seed)
+    chooser = None
+    if args.policy is not None:
+        forecast_by_tick = None
+        if args.policy.value == "ml_informed":
+            forecast_by_tick = _forecast_by_tick(config)
+        chooser = build_station_chooser(
+            args.policy,
+            scoring=config.optimization,
+            forecast_by_tick=forecast_by_tick,
+        )
+    result = run_simulation(config, sessions=sessions, seed=seed, chooser=chooser)
     write_simulation_artifacts(
         result,
         stations_path=stations_path,
@@ -318,6 +342,7 @@ def run_simulate(args: argparse.Namespace) -> int:
     payload = {
         "status": "ok",
         "seed": seed,
+        "policy": args.policy.value if args.policy is not None else "home",
         "n_ticks": config.simulation.steps_per_day,
         "n_vehicles": config.simulation.fleet_size,
         "metrics": result.metrics.model_dump(),
@@ -330,6 +355,25 @@ def run_simulate(args: argparse.Namespace) -> int:
     }
     _print_json(payload)
     return 0
+
+
+def _forecast_by_tick(config: AppConfig) -> dict[int, float]:
+    """Resolve one configured demand forecast value for every simulation tick."""
+    path = resolve_data_path(config.models.demand.predictions_path)
+    forecast = load_demand_forecast(path)
+    model = config.models.demand.decision_model
+    start = datetime.combine(
+        config.simulation.start_day,
+        time.min,
+        tzinfo=ZoneInfo(config.data.timezone),
+    )
+    values: dict[int, float] = {}
+    for tick in range(config.simulation.steps_per_day):
+        timestamp = pd.Timestamp(
+            start + timedelta(minutes=tick * config.simulation.timestep_minutes)
+        )
+        values[tick] = lookup_predicted_congestion(forecast, timestamp, model=model)
+    return values
 
 
 def run_data_pull(args: argparse.Namespace) -> int:

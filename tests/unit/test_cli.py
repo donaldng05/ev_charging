@@ -6,10 +6,12 @@ import json
 from datetime import UTC
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from chargeopt.cli import main
 from chargeopt.config import LEARNER_NAMES
+from chargeopt.models.io import write_demand_predictions
 
 
 def _shrink_learner_grids(source: str) -> str:
@@ -265,6 +267,80 @@ def test_simulate_writes_structured_artifacts(
     } <= run_columns
     metrics_header = set(metrics.read_text(encoding="utf-8").splitlines()[0].split(","))
     assert {"routing", "peak_queue"} <= metrics_header
+
+
+def test_simulate_runs_each_m4_policy_and_ml_uses_forecast(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = Path("configs/default.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "simulation.yaml"
+    stations = tmp_path / "stations.csv"
+    run = tmp_path / "run.csv"
+    station_ticks = tmp_path / "station_ticks.csv"
+    metrics = tmp_path / "metrics.csv"
+    predictions = tmp_path / "demand_predictions.csv"
+    snapshot = Path("tests/fixtures/acn_sessions.csv").resolve()
+    timestamps = pd.date_range(
+        "2018-09-05T07:00:00Z",
+        periods=96,
+        freq="15min",
+    )
+    write_demand_predictions(
+        pd.DataFrame(
+            {
+                "timestamp": timestamps,
+                "split": ["test"] * len(timestamps),
+                "target": [1.0] * len(timestamps),
+                "prediction": [1.0] * len(timestamps),
+                "model": ["random_forest"] * len(timestamps),
+                "seed": [42] * len(timestamps),
+            }
+        ),
+        predictions,
+    )
+    patched = (
+        source.replace(
+            "snapshot_path: data/raw/acn_caltech_sessions.csv",
+            f"snapshot_path: {snapshot.as_posix()}",
+        )
+        .replace(
+            "predictions_path: data/processed/demand_predictions.csv",
+            f"predictions_path: {predictions.as_posix()}",
+        )
+        .replace(
+            "stations_path: data/processed/sim_stations.csv",
+            f"stations_path: {stations.as_posix()}",
+        )
+        .replace(
+            "run_path: data/processed/sim_run.csv",
+            f"run_path: {run.as_posix()}",
+        )
+        .replace(
+            "station_ticks_path: data/processed/sim_station_ticks.csv",
+            f"station_ticks_path: {station_ticks.as_posix()}",
+        )
+        .replace(
+            "metrics_path: data/processed/sim_metrics.csv",
+            f"metrics_path: {metrics.as_posix()}",
+        )
+    )
+    config_path.write_text(patched, encoding="utf-8")
+
+    for policy in ("nearest", "cheapest", "ml"):
+        assert (
+            main(["simulate", "--config", str(config_path), "--seed", "42", "--policy", policy])
+            == 0
+        )
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["status"] == "ok"
+        assert payload["policy"] == ("ml_informed" if policy == "ml" else policy)
+        assert all(path.is_file() for path in (stations, run, station_ticks, metrics))
+
+
+def test_simulate_rejects_policy_with_all_seeds() -> None:
+    with pytest.raises(ValueError, match="cannot be combined"):
+        main(["simulate", "--all-seeds", "--policy", "nearest"])
 
 
 def test_simulate_all_seeds_writes_home_and_probe_metrics(
