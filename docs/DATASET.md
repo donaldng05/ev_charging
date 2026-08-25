@@ -153,6 +153,21 @@ itineraries remain synthetic. The canonical gitignored artifacts are:
 one `concentrated` probe row for the first seed. Single-seed `simulate` writes
 the same columns for `routing=home`.
 
+## M5 evaluation artifacts
+
+`chargeopt experiment` leaves the detailed simulator artifacts above unchanged
+and writes compact policy-comparison artifacts using the active config profile:
+
+| Artifact | Grain | Key columns/content |
+| --- | --- | --- |
+| `evaluation.raw_results_path` | one row per policy × seed | `experiment_id`, `config_hash`, `git_sha`, `policy`, `seed`, and six metrics |
+| `evaluation.summary_path` | one row per policy × metric | `n`, `mean`, `std`, `worst`, `ci_low`, `ci_high` |
+| `evaluation.metadata_path` | one JSON document per evaluation | schema version, resolved config, selected policies/seeds, hashes, and metric directions |
+
+All evaluation artifacts are gitignored. The config hash is the full SHA-256 of
+the canonical resolved YAML/Pydantic configuration. The experiment id is a
+stable policy/seed/run identifier derived from that hash and the Git SHA.
+
 Tick activity columns describe work performed during the interval even when
 the end-of-tick `status` has already changed. Metrics are auditable from the
 artifacts: queue activity reconstructs average wait, queued plus stranded

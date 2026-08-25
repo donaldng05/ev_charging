@@ -35,8 +35,8 @@ The ML models must change a downstream charging decision. Forecast RMSE alone is
 | `chargeopt.models` | M2 | Demand forecast + trip energy |
 | `chargeopt.simulation` | M3 | Vehicles, stations, queues, SOC, simulation mechanics |
 | `chargeopt.optimization` | M3–M4 | Station-selection contract and nearest / cheapest / ML-informed policies |
-| `chargeopt.evaluation` | M5–M6 | Metrics, multi-seed runs, stress test |
-| `chargeopt.cli` | M0–M4 / M5 | `chargeopt simulate`, M4 policy selection, `experiment`, `data pull|features`, `models demand|energy|tune` |
+| `chargeopt.evaluation` | M5–M6 | Policy/seed matrix, reproducible summaries, stress test |
+| `chargeopt.cli` | M0–M5 | `chargeopt experiment`, `simulate`, M4 policy selection, `data pull|features`, `models demand|energy|tune` |
 
 Config lives in [`configs/default.yaml`](../configs/default.yaml). Code must not hardcode fleet size, timestep, or horizon.
 
@@ -75,6 +75,16 @@ ML-informed policy therefore uses the forecast to scale the current queue
 penalty: `forecast_pressure = clamp(predicted_kwh / forecast_scale_kwh, 0, 1)`.
 Forecast loading stays in the CLI/integration layer; policy classes receive
 plain tick-indexed numeric values and do not import model-training code.
+
+## M5 evaluation flow
+
+`chargeopt experiment` loads the normalized ACN session snapshot once, selects
+the configured policy and seed matrix, and runs each policy through the same
+simulation interface. The runner keeps detailed `simulate` artifacts separate
+and writes compact evaluation results under `evaluation.*` paths in the active
+YAML profile. Raw rows contain policy, seed, experiment id, config hash, Git
+SHA, and all six metrics. Summary rows contain mean, sample standard deviation,
+metric-direction worst case, and a 95% normal-approximation interval.
 
 ## Out of MVP 1
 
