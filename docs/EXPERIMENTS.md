@@ -76,6 +76,35 @@ first seed) and prints `gate_passed` with median utilization, seeds with
 queues, mean wait, probe wait delta, and probe peak queue. Fixture tests do
 not require a passing gate; freeze numbers from a local Caltech snapshot run.
 
+## M4 congestion scenario
+
+The normal scenario is intentionally light enough to establish a policy-neutral
+calibration baseline. To make congestion-aware behavior measurable, use the
+separate `configs/congestion.yaml` profile. It retains 30 vehicles, 10 stations,
+and the same charger hardware, but applies a `trip_rate_multiplier` of `7.0`
+over the two-trip baseline, producing 14 effective trips per vehicle and about
+44% utilization in the local Caltech snapshot.
+
+Run the three policies across the same configured seeds:
+
+```powershell
+$policies = @("nearest", "cheapest", "ml")
+
+foreach ($policy in $policies) {
+    foreach ($seed in 42..51) {
+        uv run chargeopt simulate `
+          --config configs/congestion.yaml `
+          --policy $policy `
+          --seed $seed
+    }
+}
+```
+
+The profile writes separate `congestion_sim_*.csv` artifacts. The expected
+acceptance signal is visible queue exposure, zero SOC violations, and lower
+aggregate wait/idle time for ML-informed routing than for the cheapest baseline.
+This remains a repeatable M4 scenario loop, not the M5 ranking/reporting system.
+
 ## Stress scenario
 
 After the IID comparison, take the same policies under:

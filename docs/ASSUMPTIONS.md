@@ -22,6 +22,11 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
   ML-informed policies land in M4.
 - Synthetic locations occupy a 12 km square and station prices span
   $0.20–$0.45/kWh.
+- The normal scenario uses `trip_rate_multiplier: 1.0`. The separate M4
+  congestion profile uses `trip_rate_multiplier: 7.0`, yielding 14 effective
+  trips per vehicle while keeping the same station hardware and charger
+  capacity. This is a declared load experiment, not a change to the normal
+  calibration assumptions.
 
 ## Time
 

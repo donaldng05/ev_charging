@@ -40,6 +40,7 @@ uv run chargeopt simulate --config configs/default.yaml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
 uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
 uv run chargeopt simulate --config configs/default.yaml --policy ml --seed 42
+uv run chargeopt simulate --config configs/congestion.yaml --policy ml --seed 42
 uv run chargeopt simulate --config configs/default.yaml --all-seeds
 uv run chargeopt data pull
 uv run chargeopt data features
@@ -59,6 +60,11 @@ probe, writes `data/processed/sim_metrics.csv` (one row per seed and routing),
 and prints the frozen normal-scenario calibration gate. Vehicle-tick activity
 flags make driving, charging, queued, and stranded time auditable even when
 status changes within one tick.
+
+`configs/congestion.yaml` is a separate M4 load profile. It keeps the normal
+30-vehicle, 10-station hardware but generates 14 effective trips per vehicle
+with `trip_rate_multiplier: 7.0`, producing measurable queue pressure without
+changing the default scenario.
 
 `chargeopt models demand` reads the processed 15-minute demand CSV and writes
 gitignored prediction, metrics, and error-slice artifacts.
