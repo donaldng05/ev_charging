@@ -9,6 +9,7 @@ import pandas as pd
 
 from chargeopt.data.schemas import DemandPrediction, EnergyPrediction
 from chargeopt.models.learners import RANDOM_FOREST
+from chargeopt.utils.io import select_columns, write_csv
 
 DEMAND_PREDICTION_COLUMNS: tuple[str, ...] = (
     "timestamp",
@@ -48,21 +49,11 @@ def write_energy_predictions(frame: pd.DataFrame, path: Path) -> None:
 
 
 def write_metrics(frame: pd.DataFrame, path: Path) -> None:
-    missing = [column for column in METRICS_COLUMNS if column not in frame.columns]
-    if missing:
-        msg = f"metrics table missing columns: {missing}"
-        raise ValueError(msg)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    frame.loc[:, list(METRICS_COLUMNS)].to_csv(path, index=False)
+    write_csv(frame, path, columns=METRICS_COLUMNS, label="metrics table")
 
 
 def write_error_slices(frame: pd.DataFrame, path: Path) -> None:
-    missing = [column for column in ERROR_SLICE_COLUMNS if column not in frame.columns]
-    if missing:
-        msg = f"error-slice table missing columns: {missing}"
-        raise ValueError(msg)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    frame.loc[:, list(ERROR_SLICE_COLUMNS)].to_csv(path, index=False)
+    write_csv(frame, path, columns=ERROR_SLICE_COLUMNS, label="error-slice table")
 
 
 def load_demand_forecast(path: Path) -> pd.DataFrame:
@@ -99,11 +90,7 @@ def _write_validated(
     columns: tuple[str, ...],
     schema: type[DemandPrediction] | type[EnergyPrediction],
 ) -> None:
-    missing = [column for column in columns if column not in frame.columns]
-    if missing:
-        msg = f"prediction table missing columns: {missing}"
-        raise ValueError(msg)
-    records = cast(list[dict[str, Any]], frame.loc[:, list(columns)].to_dict(orient="records"))
+    selected = select_columns(frame, columns, label="prediction table")
+    records = cast(list[dict[str, Any]], selected.to_dict(orient="records"))
     validated = [schema.model_validate(record).model_dump() for record in records]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(validated).to_csv(path, index=False)
+    write_csv(pd.DataFrame(validated), path, label="prediction table")

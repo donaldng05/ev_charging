@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
+
+import pandas as pd
 
 from chargeopt import __version__
 from chargeopt.config import (
@@ -204,6 +207,40 @@ def _resolve_seed(args: argparse.Namespace, config: AppConfig) -> int:
     return config.experiment.seeds[0]
 
 
+def _print_json(payload: object) -> None:
+    json.dump(payload, sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
+
+
+def _write_tune_metrics(path: Path, fold_metrics: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fold_metrics.to_csv(path, index=False)
+
+
+def _tune_payload(
+    *,
+    names: tuple[str, ...],
+    best_params: Mapping[str, Mapping[str, Any]],
+    val_mae: Mapping[str, float],
+    path: Path,
+    seed: int,
+    n_splits: int | None = None,
+    n_combos: Mapping[str, int],
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "status": "ok",
+        "learners": list(names),
+        "best_params": best_params,
+        "val_mae": val_mae,
+        "n_combos": n_combos,
+        "tune_metrics_path": str(path),
+        "seed": seed,
+    }
+    if n_splits is not None:
+        payload["n_splits"] = n_splits
+    return payload
+
+
 def run_experiment(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     seed = _resolve_seed(args, config)
@@ -218,8 +255,7 @@ def run_experiment(args: argparse.Namespace) -> int:
         "seed": seed,
         "config": config.model_dump(mode="json"),
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -266,8 +302,7 @@ def run_simulate(args: argparse.Namespace) -> int:
                 "metrics": str(metrics_path),
             },
         }
-        json.dump(payload, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _print_json(payload)
         return 0
 
     seed = _resolve_seed(args, config)
@@ -293,8 +328,7 @@ def run_simulate(args: argparse.Namespace) -> int:
             "metrics": str(metrics_path),
         },
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -319,8 +353,7 @@ def run_data_pull(args: argparse.Namespace) -> int:
         "n_sessions": len(frame),
         "snapshot_path": str(path),
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -345,8 +378,7 @@ def run_data_features(args: argparse.Namespace) -> int:
         "processed_path": str(processed),
         "splits": demand["split"].value_counts().to_dict(),
     }
-    json.dump(payload, sys.stdout, indent=2, default=str)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -386,8 +418,7 @@ def run_models_demand(args: argparse.Namespace) -> int:
         "metrics_path": str(metrics_path),
         "error_slices_path": str(slices_path),
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -443,8 +474,7 @@ def run_models_energy(args: argparse.Namespace) -> int:
         "metrics_path": str(metrics_path),
         "cold_metrics_path": str(cold_path),
     }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    _print_json(payload)
     return 0
 
 
@@ -469,22 +499,19 @@ def run_models_tune_demand(args: argparse.Namespace) -> int:
         names=names,
     )
     path = resolve_data_path(config.models.demand.tune_metrics_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fold_metrics.to_csv(path, index=False)
-    payload = {
-        "status": "ok",
-        "learners": list(names),
-        "best_params": best_params,
-        "val_mae": val_mae,
-        "n_combos": {
+    _write_tune_metrics(path, fold_metrics)
+    payload = _tune_payload(
+        names=names,
+        best_params=best_params,
+        val_mae=val_mae,
+        n_combos={
             name: len(param_grid(config.models.demand.learners.search_for(name))) for name in names
         },
-        "n_splits": config.models.demand.n_splits,
-        "tune_metrics_path": str(path),
-        "seed": seed,
-    }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+        n_splits=config.models.demand.n_splits,
+        path=path,
+        seed=seed,
+    )
+    _print_json(payload)
     return 0
 
 
@@ -506,21 +533,18 @@ def run_models_tune_energy(args: argparse.Namespace) -> int:
         names=names,
     )
     path = resolve_data_path(config.models.energy.tune_metrics_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fold_metrics.to_csv(path, index=False)
-    payload = {
-        "status": "ok",
-        "learners": list(names),
-        "best_params": best_params,
-        "val_mae": val_mae,
-        "n_combos": {
+    _write_tune_metrics(path, fold_metrics)
+    payload = _tune_payload(
+        names=names,
+        best_params=best_params,
+        val_mae=val_mae,
+        n_combos={
             name: len(param_grid(config.models.energy.learners.search_for(name))) for name in names
         },
-        "tune_metrics_path": str(path),
-        "seed": seed,
-    }
-    json.dump(payload, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+        path=path,
+        seed=seed,
+    )
+    _print_json(payload)
     return 0
 
 
