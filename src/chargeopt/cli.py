@@ -7,10 +7,8 @@ import json
 import math
 import sys
 from collections.abc import Mapping, Sequence
-from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -30,13 +28,12 @@ from chargeopt.data.io import (
     write_demand_csv,
     write_trips_csv,
 )
+from chargeopt.evaluation import build_forecast_by_tick, run_evaluation, write_evaluation_artifacts
 from chargeopt.features.demand import build_demand_table
 from chargeopt.features.energy import generate_synthetic_trips
 from chargeopt.models.demand import DEMAND_BASELINES, horizon_bins, train_and_predict_demand
 from chargeopt.models.energy import PHYSICS, evaluate_energy_cold_holdout, train_and_predict_energy
 from chargeopt.models.io import (
-    load_demand_forecast,
-    lookup_predicted_congestion,
     write_demand_predictions,
     write_energy_predictions,
     write_error_slices,
@@ -58,7 +55,6 @@ from chargeopt.optimization import build_station_chooser
 from chargeopt.simulation.engine import run_simulation
 from chargeopt.simulation.io import write_simulation_artifacts
 from chargeopt.simulation.report import run_calibration
-from chargeopt.utils.experiment import experiment_id, git_sha
 from chargeopt.utils.log import configure_logging
 from chargeopt.utils.seed import set_seed
 
@@ -125,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     experiment = subparsers.add_parser(
         "experiment",
-        help="Resolve config and print the experiment identity (runner lands in M5).",
+        help="Run the configured policy and seed evaluation matrix.",
     )
     experiment.add_argument(
         "--config",
@@ -136,8 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
     experiment.add_argument(
         "--policy",
         type=_parse_policy,
-        default=PolicyName.ML_INFORMED,
-        help="Charging policy: nearest, cheapest, ml / ml_informed.",
+        default=None,
+        help="Optional policy filter: nearest, cheapest, ml / ml_informed.",
     )
     experiment.add_argument(
         "--seed",
@@ -273,17 +269,24 @@ def _tune_payload(
 
 def run_experiment(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
-    seed = _resolve_seed(args, config)
-    set_seed(seed)
-    run_id = experiment_id(config, seed=seed, policy=args.policy, commit_sha=git_sha())
-
+    sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
+    report = run_evaluation(
+        config,
+        sessions=sessions,
+        policies=(args.policy,) if args.policy is not None else None,
+        seeds=(args.seed,) if args.seed is not None else None,
+    )
+    paths = write_evaluation_artifacts(report, config)
     payload = {
-        "status": "not_implemented",
-        "message": "Experiment runner lands in M5. Config resolved successfully.",
-        "experiment_id": run_id,
-        "policy": args.policy.value,
-        "seed": seed,
-        "config": config.model_dump(mode="json"),
+        "status": "ok",
+        "n_runs": len(report.raw_results),
+        "n_policies": len(report.raw_results["policy"].unique()),
+        "n_seeds": len(report.raw_results["seed"].unique()),
+        "policies": report.metadata["policies"],
+        "seeds": report.metadata["seeds"],
+        "config_hash": report.metadata["config_hash"],
+        "git_sha": report.metadata["git_sha"],
+        "paths": paths,
     }
     _print_json(payload)
     return 0
@@ -385,21 +388,7 @@ def run_simulate(args: argparse.Namespace) -> int:
 
 def _forecast_by_tick(config: AppConfig) -> dict[int, float]:
     """Resolve one configured demand forecast value for every simulation tick."""
-    path = resolve_data_path(config.models.demand.predictions_path)
-    forecast = load_demand_forecast(path)
-    model = config.models.demand.decision_model
-    start = datetime.combine(
-        config.simulation.start_day,
-        time.min,
-        tzinfo=ZoneInfo(config.data.timezone),
-    )
-    values: dict[int, float] = {}
-    for tick in range(config.simulation.steps_per_day):
-        timestamp = pd.Timestamp(
-            start + timedelta(minutes=tick * config.simulation.timestep_minutes)
-        )
-        values[tick] = lookup_predicted_congestion(forecast, timestamp, model=model)
-    return values
+    return build_forecast_by_tick(config)
 
 
 def run_data_pull(args: argparse.Namespace) -> int:

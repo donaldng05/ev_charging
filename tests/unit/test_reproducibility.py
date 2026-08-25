@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from chargeopt.config import PolicyName, load_config
-from chargeopt.utils.experiment import experiment_id, git_sha
+from chargeopt.utils.experiment import config_hash, experiment_id, git_sha
 from chargeopt.utils.seed import set_seed
 
 
@@ -39,6 +39,13 @@ def test_experiment_id_is_stable() -> None:
     second = experiment_id(config, seed=42, policy=PolicyName.ML_INFORMED, commit_sha="abc")
     assert first == second
     assert len(first) == 12
+
+
+def test_config_hash_is_stable_and_full_length() -> None:
+    config = load_config()
+
+    assert config_hash(config) == config_hash(config)
+    assert len(config_hash(config)) == 64
 
 
 def test_experiment_id_changes_with_seed() -> None:

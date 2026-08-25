@@ -37,8 +37,8 @@ uv run chargeopt simulate --config configs/default.yaml --policy ml --seed 42
 ```
 
 The M4 command reports the selected policy and writes the usual per-run
-simulation artifacts. It does not yet rank policies across seeds; the
-multi-seed comparison and reproducibility metadata are M5 responsibilities.
+simulation artifacts. Multi-seed comparison and reproducibility metadata are
+handled by the M5 evaluation command below.
 
 ## Metrics
 
@@ -122,7 +122,19 @@ A useful MVP result can be: the policy works under IID conditions and degrades u
 ## Command shape (M5)
 
 ```text
+uv run chargeopt experiment --config configs/default.yaml
 uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
 ```
 
-Until M5 this command resolves config and prints an experiment id; it does not simulate.
+Without filters, the command runs every configured policy across every
+configured seed. `--policy` and `--seed` select explicit subsets. It writes
+three ignored artifacts configured under `evaluation`:
+
+- raw policy/seed results, one row per run;
+- policy/metric summary statistics;
+- metadata containing the resolved config, config hash, Git SHA, selected
+  policies/seeds, and metric direction rules.
+
+The summary uses sample standard deviation and a 95% normal-approximation
+interval. Worst case is the maximum for cost, wait, violations, energy usage,
+and idle time; utilization uses the minimum to expose under-utilization.
