@@ -145,6 +145,32 @@ def test_policy_falls_back_to_all_stations_when_every_charger_is_full() -> None:
     assert chosen == "sim-00"
 
 
+def test_policies_never_select_zero_capacity_stations() -> None:
+    stations = [
+        _station("sim-00", x_km=0.0).model_copy(update={"n_chargers": 0}),
+        _station("sim-01", x_km=1.0),
+    ]
+    vehicle = _vehicle(home_station_id="sim-00")
+    occupancy = {"sim-00": 0, "sim-01": 1}
+
+    for chooser in (
+        HomeStationChooser(),
+        NearestStationChooser(),
+        CheapestStationChooser(),
+        ConcentratedStationChooser(),
+    ):
+        assert (
+            chooser.choose(
+                vehicle,
+                stations,
+                tick=0,
+                occupancy=occupancy,
+                queues={"sim-00": (), "sim-01": ()},
+            )
+            == "sim-01"
+        )
+
+
 def test_ml_forecast_changes_selection_by_scaling_queue_penalty() -> None:
     stations = [
         _station("sim-00", x_km=0.0),

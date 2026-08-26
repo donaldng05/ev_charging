@@ -50,6 +50,7 @@ experiment:
 evaluation:
   raw_results_path: data/processed/evaluation_results.csv
   summary_path: data/processed/evaluation_summary.csv
+  robustness_path: data/processed/evaluation_robustness.csv
   metadata_path: data/processed/evaluation_metadata.json
   confidence_level: 0.95
 

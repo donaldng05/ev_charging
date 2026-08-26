@@ -22,7 +22,12 @@ from chargeopt.simulation.schemas import (
     VehicleStatus,
     VehicleTick,
 )
-from chargeopt.simulation.world import build_fleet, build_stations, build_trips
+from chargeopt.simulation.world import (
+    apply_station_availability,
+    build_fleet,
+    build_stations,
+    build_trips,
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ def run_simulation(
     chooser: StationChooser | None = None,
     temperature_c: float | None = None,
     trip_rate_multiplier: float | None = None,
+    station_availability: float | None = None,
 ) -> SimResult:
     """Calibrate, construct, and run one seeded synthetic fleet day."""
     simulation = config.simulation
@@ -49,6 +55,12 @@ def run_simulation(
         timestep_minutes=simulation.timestep_minutes,
     )
     stations = build_stations(simulation, calibration, seed=seed)
+    if station_availability is not None:
+        stations = apply_station_availability(
+            stations,
+            availability=station_availability,
+            seed=seed,
+        )
     vehicles = build_fleet(simulation, stations)
     trips = build_trips(
         simulation,

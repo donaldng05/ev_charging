@@ -76,15 +76,23 @@ penalty: `forecast_pressure = clamp(predicted_kwh / forecast_scale_kwh, 0, 1)`.
 Forecast loading stays in the CLI/integration layer; policy classes receive
 plain tick-indexed numeric values and do not import model-training code.
 
-## M5 evaluation flow
+## M5–M6 evaluation flow
 
 `chargeopt experiment` loads the normalized ACN session snapshot once, selects
 the configured policy and seed matrix, and runs each policy through the same
 simulation interface. The runner keeps detailed `simulate` artifacts separate
 and writes compact evaluation results under `evaluation.*` paths in the active
-YAML profile. Raw rows contain policy, seed, experiment id, config hash, Git
-SHA, and all six metrics. Summary rows contain mean, sample standard deviation,
-metric-direction worst case, and a 95% normal-approximation interval.
+YAML profile. Raw rows contain scenario, policy, seed, experiment id, config
+hash, Git SHA, and all six metrics. Summary rows contain mean, sample standard
+deviation, metric-direction worst case, and a 95% normal-approximation interval.
+
+With `--stress`, the evaluator runs normal and stress scenarios in paired
+policy/seed order. The stress path reuses the normal station locations and
+counts, then deterministically zeroes 20% of station capacities, increases the
+trip multiplier to `simulation.trip_rate_multiplier × 1.5`, and overrides
+temperature to −10°C. The robustness artifact computes paired deltas and
+confidence intervals, plus `stress_mean / normal_mean` ratios; zero baselines
+are reported as `NA` ratios.
 
 ## Out of MVP 1
 

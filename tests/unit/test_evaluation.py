@@ -13,7 +13,10 @@ from chargeopt.cli import main
 from chargeopt.config import MetricName, PolicyName, load_config
 from chargeopt.data.io import read_sessions_csv
 from chargeopt.evaluation import (
+    ScenarioName,
+    build_robustness,
     read_evaluation_results,
+    read_evaluation_robustness,
     read_evaluation_summary,
     run_evaluation,
     summarize_results,
@@ -28,6 +31,7 @@ def _config(tmp_path: Path, *, seeds: list[int] | None = None):
         update={
             "raw_results_path": tmp_path / "results.csv",
             "summary_path": tmp_path / "summary.csv",
+            "robustness_path": tmp_path / "robustness.csv",
             "metadata_path": tmp_path / "metadata.json",
         }
     )
@@ -99,7 +103,7 @@ def test_full_matrix_is_deterministic_and_writes_separate_artifacts(tmp_path: Pa
     assert len(read_evaluation_results(Path(paths["raw_results"]))) == 6
     assert len(read_evaluation_summary(Path(paths["summary"]))) == 18
     metadata = json.loads(Path(paths["metadata"]).read_text(encoding="utf-8"))
-    assert metadata["schema_version"] == "m5-evaluation-v1"
+    assert metadata["schema_version"] == "m6-evaluation-v1"
     assert metadata["git_sha"] == "abc123"
 
 
@@ -129,6 +133,7 @@ def test_summary_uses_metric_directions_and_single_seed_ci() -> None:
                 "experiment_id": "a",
                 "config_hash": "h",
                 "git_sha": "g",
+                "scenario": "normal",
                 "policy": "nearest",
                 "seed": 42,
                 "energy_cost": 1.0,
@@ -142,6 +147,7 @@ def test_summary_uses_metric_directions_and_single_seed_ci() -> None:
                 "experiment_id": "b",
                 "config_hash": "h",
                 "git_sha": "g",
+                "scenario": "normal",
                 "policy": "nearest",
                 "seed": 43,
                 "energy_cost": 3.0,
@@ -213,6 +219,7 @@ def test_artifact_readers_reject_extra_or_non_numeric_columns(tmp_path: Path) ->
             "experiment_id",
             "config_hash",
             "git_sha",
+            "scenario",
             "policy",
             "seed",
             "energy_cost",
@@ -223,7 +230,7 @@ def test_artifact_readers_reject_extra_or_non_numeric_columns(tmp_path: Path) ->
             "vehicle_idle_minutes",
         )
     }
-    extra.update({"unexpected": [1], "policy": ["nearest"]})
+    extra.update({"unexpected": [1], "policy": ["nearest"], "scenario": ["normal"]})
     pd.DataFrame(extra).to_csv(extra_path, index=False)
 
     with pytest.raises(ValueError, match="unexpected columns"):
@@ -271,5 +278,146 @@ def test_cli_experiment_reports_artifacts_and_matrix_counts(
     assert payload["n_seeds"] == 1
     assert payload["policies"] == ["cheapest"]
     assert payload["seeds"] == [42]
+    assert payload["n_scenarios"] == 1
     assert len(payload["config_hash"]) == 64
     assert set(payload["paths"]) == {"raw_results", "summary", "metadata"}
+
+
+def test_stress_evaluation_is_paired_and_writes_robustness_artifact(tmp_path: Path) -> None:
+    config = _config(tmp_path, seeds=[42, 43])
+    prediction_path = tmp_path / "demand_predictions.csv"
+    _write_forecast(config, prediction_path)
+    config = config.model_copy(
+        update={
+            "models": config.models.model_copy(
+                update={
+                    "demand": config.models.demand.model_copy(
+                        update={"predictions_path": prediction_path}
+                    )
+                }
+            )
+        }
+    )
+    sessions = read_sessions_csv(config.data.snapshot_path)
+
+    report = run_evaluation(
+        config,
+        sessions=sessions,
+        commit_sha="abc123",
+        scenarios=(ScenarioName.NORMAL, ScenarioName.STRESS),
+    )
+
+    assert len(report.raw_results) == 12
+    assert report.raw_results.groupby("scenario").size().to_dict() == {
+        "normal": 6,
+        "stress": 6,
+    }
+    assert report.raw_results.duplicated(subset=["scenario", "policy", "seed"]).sum() == 0
+    pairs = report.raw_results.groupby(["policy", "seed"])["scenario"].agg(tuple)
+    assert set(pairs) == {("normal", "stress")}
+    assert report.raw_results["experiment_id"].nunique() == 12
+    assert len(report.summary) == 36
+    assert len(report.robustness) == 18
+    assert report.metadata["stress"]["demand_multiplier"] == 1.5
+
+    paths = write_evaluation_artifacts(report, config)
+    assert Path(paths["robustness"]).is_file()
+    robustness = read_evaluation_robustness(Path(paths["robustness"]))
+    assert list(robustness.columns) == [
+        "policy",
+        "metric",
+        "n",
+        "normal_mean",
+        "stress_mean",
+        "stress_minus_normal",
+        "delta_std",
+        "delta_ci_low",
+        "delta_ci_high",
+        "robustness_ratio",
+    ]
+    assert (robustness["n"] == 2).all()
+
+
+def test_robustness_uses_paired_deltas_and_na_for_zero_baselines() -> None:
+    rows = []
+    for scenario, values in (
+        ("normal", {"energy_cost": 2.0, "avg_wait_minutes": 0.0}),
+        ("stress", {"energy_cost": 4.0, "avg_wait_minutes": 3.0}),
+    ):
+        for seed in (42, 43):
+            rows.append(
+                {
+                    "experiment_id": f"{scenario}-{seed}",
+                    "config_hash": "h",
+                    "git_sha": "g",
+                    "scenario": scenario,
+                    "policy": "nearest",
+                    "seed": seed,
+                    "energy_cost": values["energy_cost"],
+                    "avg_wait_minutes": values["avg_wait_minutes"],
+                    "soc_violations": 0.0,
+                    "energy_usage_kwh": 1.0,
+                    "station_utilization": 0.5,
+                    "vehicle_idle_minutes": 0.0,
+                }
+            )
+
+    robustness = build_robustness(
+        pd.DataFrame(rows),
+        confidence_level=0.95,
+    )
+    cost = robustness.loc[robustness["metric"] == "energy_cost"].iloc[0]
+    wait = robustness.loc[robustness["metric"] == "avg_wait_minutes"].iloc[0]
+    assert cost["n"] == 2
+    assert cost["stress_minus_normal"] == pytest.approx(2.0)
+    assert cost["robustness_ratio"] == pytest.approx(2.0)
+    assert cost["delta_std"] == pytest.approx(0.0)
+    assert cost["delta_ci_low"] == pytest.approx(cost["stress_minus_normal"])
+    assert pd.isna(wait["robustness_ratio"])
+    assert wait["stress_minus_normal"] == pytest.approx(3.0)
+
+
+def test_cli_stress_reports_scenarios_and_robustness_artifact(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _config(tmp_path, seeds=[42])
+    prediction_path = tmp_path / "demand_predictions.csv"
+    _write_forecast(config, prediction_path)
+    config = config.model_copy(
+        update={
+            "models": config.models.model_copy(
+                update={
+                    "demand": config.models.demand.model_copy(
+                        update={"predictions_path": prediction_path}
+                    )
+                }
+            )
+        }
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(config.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(
+            [
+                "experiment",
+                "--config",
+                str(config_path),
+                "--policy",
+                "cheapest",
+                "--seed",
+                "42",
+                "--stress",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["n_runs"] == 2
+    assert payload["n_scenarios"] == 2
+    assert set(payload["scenarios"]) == {"normal", "stress"}
+    assert set(payload["paths"]) == {"raw_results", "summary", "metadata", "robustness"}

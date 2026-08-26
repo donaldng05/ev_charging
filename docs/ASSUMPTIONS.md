@@ -66,6 +66,16 @@ These are frozen for MVP 1. Changing them is a new experiment, not a silent code
 - Temporal splits only, once data exists. No random shuffle of time series.
 - Multi-seed reporting. No single-run leaderboard.
 - One distribution-shift scenario (high demand, cold weather, reduced charger availability).
+- The official M6 stress scenario keeps station count and locations fixed,
+  applies demand as `simulation.trip_rate_multiplier × 1.5`, sets temperature
+  to −10°C, and retains `ceil(n_stations × 0.8)` stations. Disabled stations
+  keep their identity and location but have zero effective chargers; the
+  seed-specific selection is deterministic. Station-selection policies never
+  choose zero-capacity stations, including when active chargers are full.
+- M6 pairs normal and stress runs by the same policy and seed. Paired deltas
+  use sample standard deviation and 95% normal-approximation intervals;
+  robustness ratios are `stress_mean / normal_mean` and are `NA` for zero
+  normal means.
 
 ## Explicitly out of scope
 
