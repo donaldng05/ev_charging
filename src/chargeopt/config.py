@@ -9,10 +9,17 @@ import math
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -60,26 +67,22 @@ class SimulationConfig(BaseModel):
     @classmethod
     def timestep_must_divide_hour(cls, value: int) -> int:
         if value not in (15, 30):
-            msg = "timestep_minutes must be 15 or 30 for MVP"
-            raise ValueError(msg)
+            raise ValueError("timestep_minutes must be 15 or 30 for MVP")
         return value
 
     @field_validator("trip_rate_multiplier")
     @classmethod
     def trip_rate_multiplier_must_be_finite(cls, value: float) -> float:
         if not math.isfinite(value):
-            msg = "trip_rate_multiplier must be finite"
-            raise ValueError(msg)
+            raise ValueError("trip_rate_multiplier must be finite")
         return value
 
     @model_validator(mode="after")
     def soc_and_price_bounds(self) -> Self:
         if self.soc_min >= self.soc_charge_target:
-            msg = "soc_min must be below soc_charge_target"
-            raise ValueError(msg)
+            raise ValueError("soc_min must be below soc_charge_target")
         if self.price_per_kwh_min > self.price_per_kwh_max:
-            msg = "price_per_kwh_min must be <= price_per_kwh_max"
-            raise ValueError(msg)
+            raise ValueError("price_per_kwh_min must be <= price_per_kwh_max")
         return self
 
     @property
@@ -94,28 +97,11 @@ class ExperimentConfig(BaseModel):
     metrics: list[MetricName] = Field(min_length=1)
     seeds: list[int] = Field(min_length=1)
 
-    @field_validator("policies")
+    @field_validator("policies", "metrics", "seeds")
     @classmethod
-    def policies_unique(cls, value: list[PolicyName]) -> list[PolicyName]:
+    def list_items_unique(cls, value: list[Any], info: ValidationInfo) -> list[Any]:
         if len(set(value)) != len(value):
-            msg = "experiment.policies must be unique"
-            raise ValueError(msg)
-        return value
-
-    @field_validator("metrics")
-    @classmethod
-    def metrics_unique(cls, value: list[MetricName]) -> list[MetricName]:
-        if len(set(value)) != len(value):
-            msg = "experiment.metrics must be unique"
-            raise ValueError(msg)
-        return value
-
-    @field_validator("seeds")
-    @classmethod
-    def seeds_unique(cls, value: list[int]) -> list[int]:
-        if len(set(value)) != len(value):
-            msg = "experiment.seeds must be unique"
-            raise ValueError(msg)
+            raise ValueError(f"experiment.{info.field_name} must be unique")
         return value
 
 
@@ -153,8 +139,7 @@ class PolicyScoringConfig(BaseModel):
     @model_validator(mode="after")
     def require_nonzero_score(self) -> Self:
         if self.distance_weight + self.price_weight + self.queue_weight <= 0:
-            msg = "at least one station score weight must be positive"
-            raise ValueError(msg)
+            raise ValueError("at least one station score weight must be positive")
         return self
 
 
@@ -167,17 +152,15 @@ LEARNER_NAMES: tuple[str, ...] = (
 )
 
 
-def _positive_ints(value: list[int]) -> list[int]:
+def _check_positive_ints(value: list[int]) -> list[int]:
     if any(item < 1 for item in value):
-        msg = "search grid values must be >= 1"
-        raise ValueError(msg)
+        raise ValueError("search grid values must be >= 1")
     return value
 
 
-def _positive_floats(value: list[float]) -> list[float]:
+def _check_positive_floats(value: list[float]) -> list[float]:
     if any(item <= 0 for item in value):
-        msg = "search grid values must be > 0"
-        raise ValueError(msg)
+        raise ValueError("search grid values must be > 0")
     return value
 
 
@@ -191,7 +174,7 @@ class TreeSearch(BaseModel):
     @field_validator("n_estimators", "max_depth", "min_samples_leaf")
     @classmethod
     def grid_values_positive(cls, value: list[int]) -> list[int]:
-        return _positive_ints(value)
+        return _check_positive_ints(value)
 
 
 class TreeLearnerConfig(BaseModel):
@@ -211,7 +194,7 @@ class RidgeSearch(BaseModel):
     @field_validator("alpha")
     @classmethod
     def alpha_positive(cls, value: list[float]) -> list[float]:
-        return _positive_floats(value)
+        return _check_positive_floats(value)
 
 
 class RidgeLearnerConfig(BaseModel):
@@ -230,14 +213,13 @@ class ElasticNetSearch(BaseModel):
     @field_validator("alpha")
     @classmethod
     def alpha_positive(cls, value: list[float]) -> list[float]:
-        return _positive_floats(value)
+        return _check_positive_floats(value)
 
     @field_validator("l1_ratio")
     @classmethod
     def l1_ratio_unit_interval(cls, value: list[float]) -> list[float]:
         if any(item < 0 or item > 1 for item in value):
-            msg = "l1_ratio search values must be in [0, 1]"
-            raise ValueError(msg)
+            raise ValueError("l1_ratio search values must be in [0, 1]")
         return value
 
 
@@ -260,12 +242,12 @@ class HistGradientBoostingSearch(BaseModel):
     @field_validator("max_iter", "max_depth", "min_samples_leaf")
     @classmethod
     def grid_values_positive(cls, value: list[int]) -> list[int]:
-        return _positive_ints(value)
+        return _check_positive_ints(value)
 
     @field_validator("learning_rate")
     @classmethod
     def learning_rate_positive(cls, value: list[float]) -> list[float]:
-        return _positive_floats(value)
+        return _check_positive_floats(value)
 
 
 class HistGradientBoostingLearnerConfig(BaseModel):
@@ -304,19 +286,16 @@ class LearnerSuite(BaseModel):
         | ElasticNetLearnerConfig
         | HistGradientBoostingLearnerConfig
     ):
-        if name == "random_forest":
-            return self.random_forest
-        if name == "ridge":
-            return self.ridge
-        if name == "elasticnet":
-            return self.elasticnet
-        if name == "extra_trees":
-            return self.extra_trees
-        if name == "hist_gradient_boosting":
-            return self.hist_gradient_boosting
+        if name in LEARNER_NAMES:
+            return cast(
+                TreeLearnerConfig
+                | RidgeLearnerConfig
+                | ElasticNetLearnerConfig
+                | HistGradientBoostingLearnerConfig,
+                getattr(self, name),
+            )
         allowed = ", ".join(LEARNER_NAMES)
-        msg = f"unknown learner {name!r}; expected one of: {allowed}"
-        raise ValueError(msg)
+        raise ValueError(f"unknown learner {name!r}; expected one of: {allowed}")
 
 
 class DemandModelConfig(BaseModel):
@@ -336,8 +315,7 @@ class DemandModelConfig(BaseModel):
     def decision_model_is_learner(cls, value: str) -> str:
         if value not in LEARNER_NAMES:
             allowed = ", ".join(LEARNER_NAMES)
-            msg = f"models.demand.decision_model must be one of: {allowed}"
-            raise ValueError(msg)
+            raise ValueError(f"models.demand.decision_model must be one of: {allowed}")
         return value
 
 
@@ -390,21 +368,17 @@ class DataConfig(BaseModel):
     def site_must_be_acn(cls, value: str) -> str:
         allowed = {"caltech", "jpl", "office001"}
         if value not in allowed:
-            msg = f"data.site must be one of {sorted(allowed)}"
-            raise ValueError(msg)
+            raise ValueError(f"data.site must be one of {sorted(allowed)}")
         return value
 
     @model_validator(mode="after")
     def range_and_split(self) -> Self:
         if self.end <= self.start:
-            msg = "data.end must be after data.start"
-            raise ValueError(msg)
+            raise ValueError("data.end must be after data.start")
         if self.covid_end <= self.covid_start:
-            msg = "data.covid_end must be after data.covid_start"
-            raise ValueError(msg)
+            raise ValueError("data.covid_end must be after data.covid_start")
         if self.train_fraction + self.val_fraction >= 1:
-            msg = "data.train_fraction + data.val_fraction must be < 1"
-            raise ValueError(msg)
+            raise ValueError("data.train_fraction + data.val_fraction must be < 1")
         return self
 
 
@@ -419,8 +393,7 @@ class LoggingConfig(BaseModel):
         level = value.upper()
         allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if level not in allowed:
-            msg = f"logging.level must be one of {sorted(allowed)}"
-            raise ValueError(msg)
+            raise ValueError(f"logging.level must be one of {sorted(allowed)}")
         return level
 
 
@@ -439,22 +412,18 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
 
     @model_validator(mode="after")
-    def require_mvp_policies(self) -> Self:
+    def validate_invariants(self) -> Self:
         required = {PolicyName.NEAREST, PolicyName.CHEAPEST, PolicyName.ML_INFORMED}
         missing = required - set(self.experiment.policies)
         if missing:
             names = ", ".join(sorted(p.value for p in missing))
-            msg = f"experiment.policies must include MVP policies; missing: {names}"
-            raise ValueError(msg)
-        return self
-
-    @model_validator(mode="after")
-    def demand_horizon_matches_timestep(self) -> Self:
+            raise ValueError(f"experiment.policies must include MVP policies; missing: {names}")
         step = self.simulation.timestep_minutes
         horizon = self.models.demand.horizon_minutes
         if horizon % step != 0:
-            msg = "models.demand.horizon_minutes must be divisible by simulation.timestep_minutes"
-            raise ValueError(msg)
+            raise ValueError(
+                "models.demand.horizon_minutes must be divisible by simulation.timestep_minutes"
+            )
         return self
 
 
@@ -477,8 +446,7 @@ def resolve_config_path(path: Path | None = None) -> Path:
     if path is not None:
         resolved = path.expanduser().resolve()
         if not resolved.is_file():
-            msg = f"config file not found: {resolved}"
-            raise FileNotFoundError(msg)
+            raise FileNotFoundError(f"config file not found: {resolved}")
         return resolved
 
     cwd_candidate = Path("configs/default.yaml")
@@ -489,8 +457,7 @@ def resolve_config_path(path: Path | None = None) -> Path:
     if packaged.is_file():
         return packaged
 
-    msg = "config file not found: configs/default.yaml"
-    raise FileNotFoundError(msg)
+    raise FileNotFoundError("config file not found: configs/default.yaml")
 
 
 def project_root() -> Path:
@@ -498,15 +465,12 @@ def project_root() -> Path:
 
 
 def resolve_data_path(path: Path) -> Path:
-    if path.is_absolute():
-        return path
-    return project_root() / path
+    return path if path.is_absolute() else project_root() / path
 
 
 def load_config(path: Path | str | None = None) -> AppConfig:
     config_path = resolve_config_path(Path(path) if path is not None else None)
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        msg = f"config root must be a mapping: {config_path}"
-        raise ValueError(msg)
+        raise ValueError(f"config root must be a mapping: {config_path}")
     return AppConfig.model_validate(raw)
