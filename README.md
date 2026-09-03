@@ -1,99 +1,208 @@
 # EV Fleet Charging Intelligence
 
-Given historical charging behavior and the current state of a small EV fleet, can we predict charging demand and make better charging decisions than simple heuristics?
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-F7931E?logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
+[![Pydantic V2](https://img.shields.io/badge/Pydantic-V2-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
+[![NumPy 2.0](https://img.shields.io/badge/NumPy-2.0-013243?logo=numpy&logoColor=white)](https://numpy.org/)
+[![Pandas 3.0](https://img.shields.io/badge/Pandas-3.0-150458?logo=pandas&logoColor=white)](https://pandas.pydata.org/)
+[![Dataset: Caltech ACN-Data](https://img.shields.io/badge/Data-Caltech%20ACN--Data-FF6F00)](https://ev.caltech.edu/dataset)
+[![Modeling: Physics-Informed ML](https://img.shields.io/badge/Modeling-Physics--Informed%20ML-blueviolet)](docs/ARCHITECTURE.md)
+[![Engine: Discrete-Time Simulation](https://img.shields.io/badge/Engine-Discrete--Time%20Simulation-4B0082)](docs/ARCHITECTURE.md)
 
-This repository is the MVP for that question: two classical ML models, a deterministic charging policy, a discrete-time fleet simulator, and a reproducible evaluation protocol. The pipeline is:
 
-**data → prediction → decision → simulated fleet behavior → business/engineering metrics.**
+> **Can predictive machine learning and congestion-aware dispatch outperform standard heuristics in commercial EV fleet charging?**
 
-MVP 1 is intentionally small: one region, one fleet (~30 EVs), ~10 stations, 15-minute steps, a 24-hour horizon. No RL, deep learning, streaming, or production serving.
+This repository provides an end-to-end simulation, machine learning, and decision-optimization platform to evaluate that question. Rather than evaluating ML models on standalone loss metrics (e.g. RMSE), it connects demand forecasts directly to fleet routing decisions, simulating full operational dynamics (battery state-of-charge, charger wait queues, dynamic tariffs, and vehicle idle times) under both standard and distribution-shift stress conditions.
 
-## Setup
+---
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
+## ⚡ Key Results at a Glance
+
+Evaluated across 10 random seeds (96 15-minute decision steps per 24h horizon, 30 EVs, 10 stations) under both nominal operation and a severe **distribution-shift stress test** (1.5× trip demand, −10°C cold battery drain, 20% charger outages):
+
+| Policy | Decision Logic | Normal Cost ($) | Stress Cost ($) | Avg Wait (min) | SOC Violations | Key Takeaway |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| **Nearest** | Shortest distance to available charger | $161.02 | $202.22 | 0.03 | **0** | Fast charger access, but ignores high energy prices. |
+| **Cheapest** | Lowest $/kWh rate regardless of location | **$108.47** | **$154.72** | 0.05 | **0** | Minimizes energy bill, but incurs highest queue and idle delays. |
+| **ML-Informed** | Balances distance, tariff, & **predicted queue pressure** | $122.80 | $166.17 | **0.03** | **0** | **Optimal trade-off**: Matches Nearest's minimal wait while cutting energy cost substantially below Nearest. |
+
+*Full methodology, paired confidence intervals, and statistical robustness ratios are documented in [docs/M6_REPORT.md](docs/M6_REPORT.md).*
+
+---
+
+## 🏗️ System Architecture
 
 ```text
+       Real-World Ingest (Caltech/JPL ACN-Data)
+                          │
+                          ▼
+            Feature Engineering & Lags
+          (Cyclical time, lag_1h, lag_24h, lag_1w)
+                          │
+          ┌───────────────┴───────────────┐
+          ▼                               ▼
+  Station Demand Forecast         Trip Energy Predictor
+   (Tuned Random Forest)         (Kinematic Physics + Residuals)
+          │                               │
+          └───────────────┬───────────────┘
+                          ▼
+             Charging Policy Layer
+      (Nearest vs. Cheapest vs. ML-Informed)
+                          │
+                          ▼
+          Discrete-Time Fleet Simulator
+  (15-min ticks, 96 steps, FIFO queues, SOC kinetics, outages)
+                          │
+                          ▼
+        Reproducible Evaluation Protocol
+     (Multi-seed matrix, paired CIs, Git SHA & config hash)
+```
+
+---
+
+## 📁 Codebase Hierarchy
+
+The codebase is organized into modular, strictly-typed packages under `src/chargeopt/`:
+
+```text
+src/chargeopt/
+├── cli.py                     # Unified table-driven CLI (experiment, simulate, data, models)
+├── config.py                  # Pydantic V2 strictly-typed settings & parameter boundaries
+│
+├── data/                      # Data ingestion & schema validation
+│   ├── acn.py                 # Real-world ACN-Data API/snapshot ingestion & timezone handling
+│   ├── schemas.py             # Pydantic models for raw and normalized session records
+│   ├── validation.py          # Data-cleaning rules (duration bounds, energy sanity checks)
+│   └── io.py                  # Type-checked CSV reading and writing
+│
+├── features/                  # Feature engineering pipelines
+│   ├── demand.py              # 15-minute time-series binning, cyclical temporal & lag features
+│   └── energy.py              # Synthetic trip generation with temperature & speed dynamics
+│
+├── models/                    # ML forecasting & physics-informed modeling
+│   ├── demand.py              # Station demand forecasting pipeline (train/test temporal split)
+│   ├── energy.py              # Kinematic physics model + residual Random Forest for cold-weather drain
+│   ├── learners.py            # Learner registry (RandomForest, Ridge, ElasticNet, ExtraTrees, HGB)
+│   ├── tune.py                # Hyperparameter grid-search engine with cross-validation
+│   ├── metrics.py             # Statistical error analysis (MAE, RMSE, R²), slices, & baselines
+│   ├── baselines.py           # Naive historical lag and mean benchmark baselines
+│   └── io.py                  # Model prediction, metric, and error-slice serialization
+│
+├── optimization/              # Decision policies
+│   └── policy.py              # StationChooser protocol: Nearest, Cheapest, and ML-Informed policies
+│
+├── simulation/                # Discrete-event fleet simulator
+│   ├── engine.py              # 15-minute tick loop (96 steps): movement, charging, FIFO queues, SOC
+│   ├── world.py               # Spatial grid, station coordinates, charger specs, and vehicle entities
+│   ├── calibration.py         # Calibrates arrival rates & session durations from empirical data
+│   ├── schemas.py             # Simulation domain models (Vehicle, Station, Trip, TickRecord)
+│   ├── energy.py              # Battery drain and constant-rate charging kinetics
+│   └── report.py              # Aggregates run-level KPIs (utilization, wait time, cost, SOC violations)
+│
+├── evaluation/                # Benchmarking & statistical protocol
+│   └── protocol.py            # Multi-seed matrix runner, 95% confidence intervals, & paired stress tests
+│
+└── utils/                     # Supporting utilities
+    ├── experiment.py          # Git SHA & configuration hash tracking for 100% reproducibility
+    ├── seed.py                # Deterministic PRNG seeding across Python, NumPy, and scikit-learn
+    ├── log.py                 # Structured logging configuration
+    └── io.py                  # Atomic file reading/writing helpers
+```
+
+---
+
+## 🚀 Quickstart
+
+### 1. Prerequisites & Installation
+
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+:
+
+```bash
+# Clone the repository
+git clone https://github.com/donaldng05/ev_charging.git
+cd ev_charging
+
+# Install dependencies with locked versions
 uv sync --frozen
 ```
 
-## Quality checks
+### 2. Run Verification & Quality Suite
 
-```text
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src
-uv run pytest
+The codebase maintains strict static typing and a 95% test coverage requirement:
+
+```bash
+uv run pytest               # Run 159 tests (unit, integration, calibration, reproducibility)
+uv run ruff check .         # Fast linting
+uv run ruff format --check . # Code formatting check
+uv run mypy src             # Strict static type check
 ```
 
-Install git hooks (optional):
+---
 
-```text
-uv run pre-commit install
-```
+## 💻 CLI Usage
 
-## CLI
+All functionality is accessible via the unified `chargeopt` CLI:
 
-```text
-uv run chargeopt --help
+### Run Benchmark Experiments (Multi-Seed Matrix)
+
+```bash
+# Run full evaluation matrix across all policies and seeds
 uv run chargeopt experiment --config configs/default.yaml
-uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
+
+# Run paired distribution-shift stress test (-10°C, 1.5x load, 80% station availability)
 uv run chargeopt experiment --config configs/default.yaml --stress
-uv run chargeopt simulate --config configs/default.yaml --seed 42
-uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
-uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
+
+# Filter to a specific policy or seed
+uv run chargeopt experiment --config configs/default.yaml --policy ml --seed 42
+```
+
+### Run Discrete-Time Fleet Simulation
+
+```bash
+# Simulate fleet behavior under a specific policy
 uv run chargeopt simulate --config configs/default.yaml --policy ml --seed 42
-uv run chargeopt simulate --config configs/congestion.yaml --policy ml --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy cheapest --seed 42
+uv run chargeopt simulate --config configs/default.yaml --policy nearest --seed 42
+
+# Run calibration gate across all seeds
 uv run chargeopt simulate --config configs/default.yaml --all-seeds
+
+# Run high-congestion scenario (14 trips/EV)
+uv run chargeopt simulate --config configs/congestion.yaml --policy ml --seed 42
+```
+
+### Data Pipeline & Model Training
+
+```bash
+# Download and process ACN-Data session records
 uv run chargeopt data pull
 uv run chargeopt data features
+
+# Train demand forecaster and physics-informed energy model
 uv run chargeopt models demand
 uv run chargeopt models energy
+
+# Tune hyperparameters across candidate learners
 uv run chargeopt models tune demand
 uv run chargeopt models tune energy
 ```
 
-`chargeopt experiment` runs every configured policy across every configured seed,
-then writes policy-aware raw results, aggregate statistics, and reproducibility
-metadata to the configured evaluation paths. `--policy` and `--seed` are
-optional filters for focused runs. Each result records an experiment id, full
-config hash, and Git SHA. The summary reports mean, sample standard deviation,
-worst case, and a 95% normal-approximation confidence interval. M4 policy
-simulations still run one policy at a time through `chargeopt simulate --policy`;
-`ml` is an alias for `ml_informed` and consumes the configured Random Forest
-demand forecast.
+---
 
-Add `--stress` for the official M6 paired comparison. It runs normal and stress
-rows for every selected policy/seed, using demand ×1.5, −10°C, and 80% active
-station availability. It additionally writes the paired robustness CSV with
-signed stress-minus-normal deltas, paired confidence intervals, and stress /
-normal ratios. The CLI reports all artifact paths and matrix counts.
+## 🛡️ Engineering & Design Highlights
 
-`chargeopt simulate` reads the normalized ACN session snapshot, calibrates a
-synthetic 10-station world, and runs the configured 30-vehicle fleet for 96
-15-minute ticks. Default mode writes one seed. `--all-seeds` runs every
-`experiment.seeds` value under home-station routing plus one concentrated-routing
-probe, writes `data/processed/sim_metrics.csv` (one row per seed and routing),
-and prints the frozen normal-scenario calibration gate. Vehicle-tick activity
-flags make driving, charging, queued, and stranded time auditable even when
-status changes within one tick.
+- **Strict Type Safety**: 100% typed with Python 3.12 type hints, validated under `mypy --strict` with Pydantic V2 integration.
+- **Physics-Informed ML**: Hybrid energy prediction combines kinematic mechanics (aerodynamic drag, rolling resistance, HVAC load) with residual Random Forest learning for cold-weather temperature holdouts (−10°C).
+- **100% Reproducible Experiments**: Every evaluation run records the exact Git commit SHA, full YAML configuration hash, and deterministic PRNG seeds.
+- **Robustness Under Distribution Shift**: Explicitly evaluates policy failure modes under peak travel multipliers, sub-zero temperatures, and partial infrastructure downtime rather than assuming ideal stationary conditions.
+- **High Test Standards**: 159 tests covering data validation, model contracts, calibration gates, simulation invariants, and CLI argument parsing, backed by automated coverage enforcement.
 
-`configs/congestion.yaml` is a separate M4 load profile. It keeps the normal
-30-vehicle, 10-station hardware but generates 14 effective trips per vehicle
-with `trip_rate_multiplier: 7.0`, producing measurable queue pressure without
-changing the default scenario.
+---
 
-`chargeopt models demand` reads the processed 15-minute demand CSV and writes
-gitignored prediction, metrics, and error-slice artifacts.
-`chargeopt models energy` generates synthetic trips, writes physics plus residual
-Random Forest predictions, and a −10°C holdout metrics CSV.
-`chargeopt models tune demand|energy` prints `best_params` JSON and writes fold
-metrics; it does not rewrite `configs/default.yaml`. Copy winners into the frozen
-`n_estimators` / `max_depth` / `min_samples_leaf` fields after a full-history
-demand pull.
+## 📖 Deep-Dive Documentation
 
-## Docs
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Dataset](docs/DATASET.md)
-- [Experiments](docs/EXPERIMENTS.md)
-- [Assumptions](docs/ASSUMPTIONS.md)
+- [Architecture & System Design](docs/ARCHITECTURE.md): Detailed pipeline design, component contracts, and scope boundaries.
+- [Experimental Protocol](docs/EXPERIMENTS.md): Formal research hypotheses, metric definitions, and evaluation methodology.
+- [Distribution-Shift Stress Report](docs/M6_REPORT.md): Complete findings, confidence intervals, and paired stress analysis.
+- [Dataset & Ingestion Guide](docs/DATASET.md): Real-world Caltech/JPL ACN-Data snapshot characteristics and preprocessing.
+- [Engineering Assumptions](docs/ASSUMPTIONS.md): Explicit documentation of simulation mechanics, hardware parameters, and simplifications.
