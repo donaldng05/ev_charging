@@ -37,19 +37,10 @@ class FittedLearner:
 
 def build_estimator(name: str, params: Mapping[str, Any], seed: int) -> BaseEstimator:
     if name not in LEARNER_NAMES:
-        allowed = ", ".join(LEARNER_NAMES)
-        msg = f"unknown learner {name!r}; expected one of: {allowed}"
-        raise ValueError(msg)
-    if name == RANDOM_FOREST:
-        return RandomForestRegressor(
-            n_estimators=int(params["n_estimators"]),
-            max_depth=int(params["max_depth"]),
-            min_samples_leaf=int(params["min_samples_leaf"]),
-            random_state=seed,
-            n_jobs=1,
-        )
-    if name == EXTRA_TREES:
-        return ExtraTreesRegressor(
+        raise ValueError(f"unknown learner {name!r}; expected one of: {', '.join(LEARNER_NAMES)}")
+    if name in (RANDOM_FOREST, EXTRA_TREES):
+        cls = RandomForestRegressor if name == RANDOM_FOREST else ExtraTreesRegressor
+        return cls(
             n_estimators=int(params["n_estimators"]),
             max_depth=int(params["max_depth"]),
             min_samples_leaf=int(params["min_samples_leaf"]),
@@ -60,9 +51,7 @@ def build_estimator(name: str, params: Mapping[str, Any], seed: int) -> BaseEsti
         return Ridge(alpha=float(params["alpha"]))
     if name == ELASTICNET:
         return ElasticNet(
-            alpha=float(params["alpha"]),
-            l1_ratio=float(params["l1_ratio"]),
-            max_iter=10_000,
+            alpha=float(params["alpha"]), l1_ratio=float(params["l1_ratio"]), max_iter=10_000
         )
     return HistGradientBoostingRegressor(
         max_iter=int(params["max_iter"]),
@@ -93,8 +82,7 @@ def fit_learner(
 ) -> FittedLearner:
     pipeline = build_pipeline(name, params, seed)
     features = train.loc[:, list(feature_columns)].astype(float)
-    target = train[target_column].to_numpy(dtype=float)
-    pipeline.fit(features, target)
+    pipeline.fit(features, train[target_column].to_numpy(dtype=float))
     return FittedLearner(name=name, pipeline=pipeline)
 
 
@@ -105,5 +93,4 @@ def predict_learner(
     feature_columns: tuple[str, ...],
 ) -> np.ndarray:
     features = frame.loc[:, list(feature_columns)].astype(float)
-    predicted = fitted.pipeline.predict(features)
-    return np.asarray(predicted, dtype=float)
+    return np.asarray(fitted.pipeline.predict(features), dtype=float)

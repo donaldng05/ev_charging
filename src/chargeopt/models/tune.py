@@ -31,13 +31,9 @@ def param_grid(search: Mapping[str, Sequence[Any]]) -> list[dict[str, Any]]:
 
 
 def expanding_window_splits(
-    n_samples: int,
-    *,
-    n_splits: int,
-    gap: int,
+    n_samples: int, *, n_splits: int, gap: int
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    splitter = TimeSeriesSplit(n_splits=n_splits, gap=gap)
-    return list(splitter.split(np.zeros(n_samples)))
+    return list(TimeSeriesSplit(n_splits=n_splits, gap=gap).split(np.zeros(n_samples)))
 
 
 def _coerce_param(value: Any) -> Any:
@@ -51,8 +47,7 @@ def _coerce_param(value: Any) -> Any:
 
 
 def select_best_params(
-    fold_metrics: pd.DataFrame,
-    param_keys: Sequence[str] | None = None,
+    fold_metrics: pd.DataFrame, param_keys: Sequence[str] | None = None
 ) -> dict[str, Any]:
     keys = (
         list(param_keys)
@@ -75,8 +70,9 @@ def resolve_learner_names(requested: str | None) -> tuple[str, ...]:
     if requested is None:
         return LEARNER_NAMES
     if requested not in LEARNER_NAMES:
-        allowed = ", ".join(LEARNER_NAMES)
-        raise ValueError(f"unknown learner {requested!r}; expected one of: {allowed}")
+        raise ValueError(
+            f"unknown learner {requested!r}; expected one of: {', '.join(LEARNER_NAMES)}"
+        )
     return (requested,)
 
 
@@ -145,6 +141,16 @@ def tune_demand_learner(
     )
 
 
+def _collect_tune(
+    results: list[tuple[str, dict[str, Any], pd.DataFrame, float]],
+) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
+    return (
+        {name: best for name, best, _, _ in results},
+        pd.concat([folds for _, _, folds, _ in results], ignore_index=True),
+        {name: mae for name, _, _, mae in results},
+    )
+
+
 def tune_demand_learners(
     demand: pd.DataFrame,
     *,
@@ -157,26 +163,23 @@ def tune_demand_learners(
     names: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
     selected = tuple(names) if names is not None else LEARNER_NAMES
-    results = [
-        (
-            name,
-            *tune_demand_learner(
-                demand,
-                learner=name,
-                search=learners.search_for(name),
-                timestep_minutes=timestep_minutes,
-                horizon_minutes=horizon_minutes,
-                n_splits=n_splits,
-                seed=seed,
-                gap=gap,
-            ),
-        )
-        for name in selected
-    ]
-    return (
-        {name: best for name, best, _, _ in results},
-        pd.concat([folds for _, _, folds, _ in results], ignore_index=True),
-        {name: mae for name, _, _, mae in results},
+    return _collect_tune(
+        [
+            (
+                name,
+                *tune_demand_learner(
+                    demand,
+                    learner=name,
+                    search=learners.search_for(name),
+                    timestep_minutes=timestep_minutes,
+                    horizon_minutes=horizon_minutes,
+                    n_splits=n_splits,
+                    seed=seed,
+                    gap=gap,
+                ),
+            )
+            for name in selected
+        ]
     )
 
 
@@ -193,13 +196,12 @@ def tune_energy_learner(
     if train.empty or val.empty:
         raise ValueError("synthetic trips have no train/val split")
 
-    dummy_splits = [(np.arange(len(train)), np.arange(len(train)))]
     return _tune_grid(
         train,
         val,
         search=search,
         learner=learner,
-        splits=dummy_splits,
+        splits=[(np.arange(len(train)), np.arange(len(train)))],
         fit_fn=lambda df, p: fit_residual_learner(df, spec=spec, name=learner, params=p, seed=seed),
         predict_fn=lambda df, f: predict_residual_learner(df, spec=spec, fitted=f),
         target_col="energy_kwh",
@@ -214,17 +216,14 @@ def tune_energy_learners(
     names: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
     selected = tuple(names) if names is not None else LEARNER_NAMES
-    results = [
-        (
-            name,
-            *tune_energy_learner(
-                trips, spec=spec, learner=name, search=spec.learners.search_for(name), seed=seed
-            ),
-        )
-        for name in selected
-    ]
-    return (
-        {name: best for name, best, _, _ in results},
-        pd.concat([folds for _, _, folds, _ in results], ignore_index=True),
-        {name: mae for name, _, _, mae in results},
+    return _collect_tune(
+        [
+            (
+                name,
+                *tune_energy_learner(
+                    trips, spec=spec, learner=name, search=spec.learners.search_for(name), seed=seed
+                ),
+            )
+            for name in selected
+        ]
     )
