@@ -23,7 +23,7 @@ from chargeopt.utils.experiment import config_hash, experiment_id, git_sha
 from chargeopt.utils.io import select_columns, write_csv
 from chargeopt.utils.seed import set_seed
 
-METRIC_COLUMNS: tuple[str, ...] = tuple(metric.value for metric in MetricName)
+METRIC_COLUMNS: tuple[str, ...] = tuple(m.value for m in MetricName)
 
 
 class ScenarioName(StrEnum):
@@ -67,8 +67,6 @@ SCHEMA_VERSION = "m6-evaluation-v1"
 
 @dataclass(frozen=True)
 class EvaluationReport:
-    """Raw runs, summary statistics, and metadata for one evaluation command."""
-
     raw_results: pd.DataFrame
     summary: pd.DataFrame
     robustness: pd.DataFrame
@@ -76,8 +74,7 @@ class EvaluationReport:
 
 
 def build_forecast_by_tick(config: AppConfig) -> dict[int, float]:
-    path = resolve_data_path(config.models.demand.predictions_path)
-    forecast = load_demand_forecast(path)
+    forecast = load_demand_forecast(resolve_data_path(config.models.demand.predictions_path))
     model = config.models.demand.decision_model
     start = datetime.combine(
         config.simulation.start_day, time.min, tzinfo=ZoneInfo(config.data.timezone)
@@ -100,84 +97,77 @@ def run_evaluation(
     commit_sha: str | None = None,
     scenarios: Sequence[ScenarioName] = (ScenarioName.NORMAL,),
 ) -> EvaluationReport:
-    selected_policies = _select_policies(config, policies)
-    selected_seeds = _select_seeds(config, seeds)
-    selected_scenarios = _select_scenarios(scenarios)
-    resolved_sha = commit_sha or git_sha() or "unknown"
-    resolved_config_hash = config_hash(config)
-    f_by_tick = (
-        build_forecast_by_tick(config) if PolicyName.ML_INFORMED in selected_policies else None
-    )
+    sel_policies = _select_policies(config, policies)
+    sel_seeds = _select_seeds(config, seeds)
+    sel_scenarios = _select_scenarios(scenarios)
+    res_sha, res_hash = commit_sha or git_sha() or "unknown", config_hash(config)
+    f_by_tick = build_forecast_by_tick(config) if PolicyName.ML_INFORMED in sel_policies else None
 
     rows: list[dict[str, object]] = []
-    for scenario in selected_scenarios:
-        temp_c, trip_mult, avail = _scenario_overrides(config, scenario)
-        for policy in selected_policies:
-            for seed in selected_seeds:
-                set_seed(seed)
-                chooser = build_station_chooser(
-                    policy, scoring=config.optimization, forecast_by_tick=f_by_tick
+    for sc in sel_scenarios:
+        temp_c, trip_mult, avail = _scenario_overrides(config, sc)
+        for pol in sel_policies:
+            for s in sel_seeds:
+                set_seed(s)
+                ch = build_station_chooser(
+                    pol, scoring=config.optimization, forecast_by_tick=f_by_tick
                 )
-                result = run_simulation(
+                res = run_simulation(
                     config,
                     sessions=sessions,
-                    seed=seed,
-                    chooser=chooser,
+                    seed=s,
+                    chooser=ch,
                     temperature_c=temp_c,
                     trip_rate_multiplier=trip_mult,
                     station_availability=avail,
                 )
-                metrics = result.metrics.model_dump()
+                m = res.metrics.model_dump()
                 rows.append(
                     {
                         "experiment_id": experiment_id(
-                            config,
-                            seed=seed,
-                            policy=policy,
-                            commit_sha=resolved_sha,
-                            scenario=scenario.value,
+                            config, seed=s, policy=pol, commit_sha=res_sha, scenario=sc.value
                         ),
-                        "config_hash": resolved_config_hash,
-                        "git_sha": resolved_sha,
-                        "scenario": scenario.value,
-                        "policy": policy.value,
-                        "seed": seed,
-                        **{metric: metrics[metric] for metric in METRIC_COLUMNS},
+                        "config_hash": res_hash,
+                        "git_sha": res_sha,
+                        "scenario": sc.value,
+                        "policy": pol.value,
+                        "seed": s,
+                        **{col: m[col] for col in METRIC_COLUMNS},
                     }
                 )
 
-    raw_results = pd.DataFrame(rows, columns=list(RAW_RESULT_COLUMNS))
-    summary = summarize_results(raw_results, confidence_level=config.evaluation.confidence_level)
+    raw = pd.DataFrame(rows, columns=list(RAW_RESULT_COLUMNS))
+    conf = config.evaluation.confidence_level
+    summary = summarize_results(raw, confidence_level=conf)
     robustness = (
-        build_robustness(raw_results, confidence_level=config.evaluation.confidence_level)
-        if ScenarioName.STRESS in selected_scenarios
+        build_robustness(raw, confidence_level=conf)
+        if ScenarioName.STRESS in sel_scenarios
         else pd.DataFrame(columns=list(ROBUSTNESS_COLUMNS))
     )
-    metadata: dict[str, object] = {
+
+    meta: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
-        "config_hash": resolved_config_hash,
-        "git_sha": resolved_sha,
+        "config_hash": res_hash,
+        "git_sha": res_sha,
         "config": config.model_dump(mode="json"),
-        "scenarios": [s.value for s in selected_scenarios],
-        "policies": [p.value for p in selected_policies],
-        "seeds": list(selected_seeds),
+        "scenarios": [s.value for s in sel_scenarios],
+        "policies": [p.value for p in sel_policies],
+        "seeds": list(sel_seeds),
         "metric_worst_direction": {
-            m: ("max" if m in MAXIMIZE_FOR_WORST else "min") for m in METRIC_COLUMNS
+            col: ("max" if col in MAXIMIZE_FOR_WORST else "min") for col in METRIC_COLUMNS
         },
-        "confidence_level": config.evaluation.confidence_level,
-        "n_runs": len(raw_results),
+        "confidence_level": conf,
+        "n_runs": len(raw),
     }
-    if ScenarioName.STRESS in selected_scenarios:
-        metadata["stress"] = {
+    if ScenarioName.STRESS in sel_scenarios:
+        meta["stress"] = {
             "demand_multiplier": config.stress.demand_multiplier,
             "temperature_c": config.stress.temperature_c,
             "station_availability": config.stress.station_availability,
             "availability_rule": "ceil(n_stations * availability) active stations",
             "ratio_rule": "stress_mean / normal_mean; NA when normal_mean is zero",
         }
-    return EvaluationReport(
-        raw_results=raw_results, summary=summary, robustness=robustness, metadata=metadata
-    )
+    return EvaluationReport(raw_results=raw, summary=summary, robustness=robustness, metadata=meta)
 
 
 def summarize_results(raw_results: pd.DataFrame, *, confidence_level: float) -> pd.DataFrame:
@@ -217,14 +207,11 @@ def build_robustness(raw_results: pd.DataFrame, *, confidence_level: float) -> p
     z_val = NormalDist().inv_cdf(0.5 + confidence_level / 2.0)
     rows: list[dict[str, Any]] = []
     for policy, pgroup in raw_results.groupby("policy", sort=False):
-        normal = pgroup.loc[pgroup["scenario"] == "normal"].set_index("seed")
+        norm = pgroup.loc[pgroup["scenario"] == "normal"].set_index("seed")
         stress = pgroup.loc[pgroup["scenario"] == "stress"].set_index("seed")
-        paired = normal.index.intersection(stress.index)
+        paired = norm.index.intersection(stress.index)
         for m in METRIC_COLUMNS:
-            n_vals, s_vals = (
-                normal.loc[paired, m].astype(float),
-                stress.loc[paired, m].astype(float),
-            )
+            n_vals, s_vals = norm.loc[paired, m].astype(float), stress.loc[paired, m].astype(float)
             deltas = s_vals - n_vals
             n, d_mean = len(deltas), float(deltas.mean())
             d_std = float(deltas.std(ddof=1)) if n > 1 else 0.0
@@ -253,10 +240,10 @@ def write_evaluation_artifacts(report: EvaluationReport, config: AppConfig) -> d
     _validate_summary(report.summary)
     if not report.robustness.empty:
         _validate_robustness(report.robustness)
+    cfg_eval = config.evaluation
     paths = {
-        "raw_results": resolve_data_path(config.evaluation.raw_results_path),
-        "summary": resolve_data_path(config.evaluation.summary_path),
-        "metadata": resolve_data_path(config.evaluation.metadata_path),
+        k: resolve_data_path(getattr(cfg_eval, f"{k}_path"))
+        for k in ("raw_results", "summary", "metadata")
     }
     write_csv(
         report.raw_results,
@@ -267,7 +254,7 @@ def write_evaluation_artifacts(report: EvaluationReport, config: AppConfig) -> d
     write_csv(report.summary, paths["summary"], columns=SUMMARY_COLUMNS, label="evaluation summary")
     res_paths = {k: str(v) for k, v in paths.items()}
     if not report.robustness.empty:
-        rob_path = resolve_data_path(config.evaluation.robustness_path)
+        rob_path = resolve_data_path(cfg_eval.robustness_path)
         write_csv(
             report.robustness, rob_path, columns=ROBUSTNESS_COLUMNS, label="evaluation robustness"
         )
@@ -367,54 +354,49 @@ def _check_finite(frame: pd.DataFrame, columns: Sequence[str], label: str) -> No
             raise ValueError(f"{label} column {c!r} must contain finite numbers")
 
 
-def _validate_raw_results(frame: pd.DataFrame) -> None:
-    _check_cols(frame, RAW_RESULT_COLUMNS, "evaluation results")
+def _validate_base(frame: pd.DataFrame, cols: Sequence[str], label: str, dups: list[str]) -> None:
+    _check_cols(frame, cols, label)
     if frame.empty:
-        raise ValueError("evaluation results must contain at least one row")
-    if not set(frame["scenario"].astype(str)).issubset({s.value for s in ScenarioName}):
-        raise ValueError("evaluation results contain an unknown scenario")
+        raise ValueError(f"{label} must contain at least one row")
     if not set(frame["policy"].astype(str)).issubset({p.value for p in PolicyName}):
-        raise ValueError("evaluation results contain an unknown policy")
+        raise ValueError(f"{label} contains an unknown policy")
+    if "metric" in frame.columns and not set(frame["metric"].astype(str)).issubset(
+        set(METRIC_COLUMNS)
+    ):
+        raise ValueError(f"{label} contains an unknown metric")
+    if "scenario" in frame.columns and not set(frame["scenario"].astype(str)).issubset(
+        {s.value for s in ScenarioName}
+    ):
+        raise ValueError(f"{label} contains an unknown scenario")
+    if "n" in frame.columns:
+        counts = frame["n"].astype(float)
+        if not ((counts >= 1) & (counts == counts.round())).all():
+            raise ValueError(f"{label} counts must be positive integers")
+    if frame.duplicated(subset=dups).any():
+        raise ValueError(f"{label} contains duplicate {'/'.join(dups)} rows")
+
+
+def _validate_raw_results(frame: pd.DataFrame) -> None:
+    _validate_base(frame, RAW_RESULT_COLUMNS, "evaluation results", ["scenario", "policy", "seed"])
     if frame["experiment_id"].isna().any() or frame["config_hash"].isna().any():
         raise ValueError("evaluation results contain missing reproducibility metadata")
     _check_finite(frame, ("seed", *METRIC_COLUMNS), "evaluation results")
     seeds = frame["seed"].astype(float)
     if not (seeds == seeds.round()).all():
         raise ValueError("evaluation result seeds must be integers")
-    if frame.duplicated(subset=["scenario", "policy", "seed"]).any():
-        raise ValueError("evaluation results contain duplicate scenario/policy/seed rows")
 
 
 def _validate_summary(frame: pd.DataFrame) -> None:
-    _check_cols(frame, SUMMARY_COLUMNS, "evaluation summary")
-    if frame.empty:
-        raise ValueError("evaluation summary must contain at least one row")
-    if not set(frame["scenario"].astype(str)).issubset({s.value for s in ScenarioName}):
-        raise ValueError("evaluation summary contains an unknown scenario")
-    if not set(frame["policy"].astype(str)).issubset({p.value for p in PolicyName}):
-        raise ValueError("evaluation summary contains an unknown policy")
-    if not set(frame["metric"].astype(str)).issubset(set(METRIC_COLUMNS)):
-        raise ValueError("evaluation summary contains an unknown metric")
+    _validate_base(frame, SUMMARY_COLUMNS, "evaluation summary", ["scenario", "policy", "metric"])
     _check_finite(frame, ("n", "mean", "std", "worst", "ci_low", "ci_high"), "evaluation summary")
-    counts = frame["n"].astype(float)
-    if not ((counts >= 1) & (counts == counts.round())).all():
-        raise ValueError("evaluation summary counts must be positive integers")
     if (frame["std"].astype(float) < 0).any():
         raise ValueError("evaluation summary standard deviations must be non-negative")
     if (frame["ci_low"].astype(float) > frame["ci_high"].astype(float)).any():
         raise ValueError("evaluation summary confidence intervals are inverted")
-    if frame.duplicated(subset=["scenario", "policy", "metric"]).any():
-        raise ValueError("evaluation summary contains duplicate scenario/policy/metric rows")
 
 
 def _validate_robustness(frame: pd.DataFrame) -> None:
-    _check_cols(frame, ROBUSTNESS_COLUMNS, "evaluation robustness")
-    if frame.empty:
-        raise ValueError("evaluation robustness must contain at least one row")
-    if not set(frame["policy"].astype(str)).issubset({p.value for p in PolicyName}):
-        raise ValueError("evaluation robustness contains an unknown policy")
-    if not set(frame["metric"].astype(str)).issubset(set(METRIC_COLUMNS)):
-        raise ValueError("evaluation robustness contains an unknown metric")
+    _validate_base(frame, ROBUSTNESS_COLUMNS, "evaluation robustness", ["policy", "metric"])
     _check_finite(
         frame,
         (
@@ -428,14 +410,9 @@ def _validate_robustness(frame: pd.DataFrame) -> None:
         ),
         "evaluation robustness",
     )
-    counts = frame["n"].astype(float)
-    if not ((counts >= 1) & (counts == counts.round())).all():
-        raise ValueError("evaluation robustness counts must be positive integers")
     if (frame["delta_std"].astype(float) < 0).any():
         raise ValueError("evaluation robustness delta standard deviations must be non-negative")
     ratio = pd.to_numeric(frame["robustness_ratio"], errors="coerce")
     normal_zero = frame["normal_mean"].astype(float).abs() <= 1e-12
     if ratio[~normal_zero].isna().any() or not ratio[~normal_zero].map(math.isfinite).all():
         raise ValueError("non-zero normal means require finite robustness ratios")
-    if frame.duplicated(subset=["policy", "metric"]).any():
-        raise ValueError("evaluation robustness contains duplicate policy/metric rows")

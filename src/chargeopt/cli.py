@@ -70,8 +70,9 @@ POLICY_ALIASES = {
 def _parse_policy(value: str) -> PolicyName:
     key = value.lower()
     if key not in POLICY_ALIASES:
-        allowed = ", ".join(sorted(POLICY_ALIASES))
-        raise argparse.ArgumentTypeError(f"unknown policy {value!r}; expected one of: {allowed}")
+        raise argparse.ArgumentTypeError(
+            f"unknown policy {value!r}; expected one of: {', '.join(sorted(POLICY_ALIASES))}"
+        )
     return POLICY_ALIASES[key]
 
 
@@ -87,117 +88,71 @@ def _parse_positive_finite_float(value: str) -> float:
     return parsed
 
 
-def _add_config_and_seed(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to experiment YAML (default: configs/default.yaml).",
-    )
-    parser.add_argument(
-        "--seed", type=int, default=None, help="Random seed (default: first seed in the config)."
-    )
-
-
-def _add_learner_flag(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--learner",
-        choices=list(LEARNER_NAMES),
-        default=None,
-        help="Tune one learner (default: all configured learners).",
-    )
+def _add_args(p: argparse.ArgumentParser, *flags: str) -> None:
+    for f in flags:
+        if f == "config":
+            p.add_argument("--config", type=Path, default=None, help="Path to experiment YAML.")
+        elif f == "seed":
+            p.add_argument("--seed", type=int, default=None, help="Random seed.")
+        elif f == "learner":
+            p.add_argument(
+                "--learner", choices=list(LEARNER_NAMES), default=None, help="Tune one learner."
+            )
+        elif f == "policy":
+            p.add_argument("--policy", type=_parse_policy, default=None, help="Optional policy.")
+        elif f == "stress":
+            p.add_argument("--stress", action="store_true", help="Run stress scenario.")
+        elif f == "trip_rate":
+            p.add_argument(
+                "--trip-rate-multiplier",
+                type=_parse_positive_finite_float,
+                default=None,
+                help="Trip load multiplier.",
+            )
+        elif f == "all_seeds":
+            p.add_argument("--all-seeds", action="store_true", help="Run every experiment seed.")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    p = argparse.ArgumentParser(
         prog="chargeopt", description="EV fleet charging intelligence experiments."
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    sub = parser.add_subparsers(dest="command")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    sub = p.add_subparsers(dest="command")
 
-    exp = sub.add_parser("experiment", help="Run the configured policy and seed evaluation matrix.")
-    exp.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to experiment YAML (default: configs/default.yaml).",
+    _add_args(
+        sub.add_parser("experiment", help="Run evaluation matrix."),
+        "config",
+        "seed",
+        "policy",
+        "stress",
     )
-    exp.add_argument(
-        "--policy",
-        type=_parse_policy,
-        default=None,
-        help="Optional policy filter: nearest, cheapest, ml / ml_informed.",
-    )
-    exp.add_argument(
-        "--seed", type=int, default=None, help="Random seed (default: first seed in the config)."
-    )
-    exp.add_argument(
-        "--stress", action="store_true", help="Run paired normal and declared stress scenarios."
+    _add_args(
+        sub.add_parser("simulate", help="Run simulation."),
+        "config",
+        "seed",
+        "policy",
+        "trip_rate",
+        "all_seeds",
     )
 
-    sim = sub.add_parser("simulate", help="Run one seeded 24-hour synthetic fleet simulation.")
-    _add_config_and_seed(sim)
-    sim.add_argument(
-        "--policy",
-        type=_parse_policy,
-        default=None,
-        help="M4 station policy: nearest, cheapest, ml / ml_informed (default: M3 home routing).",
-    )
-    sim.add_argument(
-        "--trip-rate-multiplier",
-        type=_parse_positive_finite_float,
-        default=None,
-        help="Override configured trip load multiplier for this simulation.",
-    )
-    sim.add_argument(
-        "--all-seeds",
-        action="store_true",
-        help="Run every experiment seed under home routing plus the concentrated-routing probe.",
-    )
+    data_sub = sub.add_parser("data", help="ACN-Data ingest.").add_subparsers(dest="data_command")
+    for cmd in ("pull", "features"):
+        _add_args(data_sub.add_parser(cmd, help=f"Data {cmd}."), "config")
 
-    data_sub = sub.add_parser("data", help="ACN-Data ingest and demand features.").add_subparsers(
-        dest="data_command"
-    )
-    data_sub.add_parser("pull", help="Snapshot Caltech sessions to CSV.").add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to experiment YAML (default: configs/default.yaml).",
-    )
-    data_sub.add_parser(
-        "features", help="Build the 15-minute demand table from a session CSV snapshot."
-    ).add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to experiment YAML (default: configs/default.yaml).",
-    )
-
-    models_sub = sub.add_parser("models", help="Train demand and energy models.").add_subparsers(
+    models_sub = sub.add_parser("models", help="Train models.").add_subparsers(
         dest="models_command"
     )
-    demand = models_sub.add_parser(
-        "demand", help="Fit demand baselines and sklearn learners on the 15-minute demand table."
-    )
-    _add_config_and_seed(demand)
-    energy = models_sub.add_parser(
-        "energy",
-        help="Generate synthetic trips and fit physics plus sklearn residual energy models.",
-    )
-    _add_config_and_seed(energy)
+    for cmd in ("demand", "energy"):
+        _add_args(models_sub.add_parser(cmd, help=f"Fit {cmd}."), "config", "seed")
 
-    tune_sub = models_sub.add_parser(
-        "tune", help="Search hyperparameters without touching the test split."
-    ).add_subparsers(dest="tune_command")
-    for t_name, t_help in [
-        ("demand", "Walk-forward learner search on chronological train folds."),
-        ("energy", "Validate-split learner search for trip energy."),
-    ]:
-        p = tune_sub.add_parser(t_name, help=t_help)
-        _add_config_and_seed(p)
-        _add_learner_flag(p)
+    tune_sub = models_sub.add_parser("tune", help="Search hyperparameters.").add_subparsers(
+        dest="tune_command"
+    )
+    for cmd in ("demand", "energy"):
+        _add_args(tune_sub.add_parser(cmd, help=f"Tune {cmd}."), "config", "seed", "learner")
 
-    return parser
+    return p
 
 
 def _load_from_args(args: argparse.Namespace) -> tuple[RuntimeSettings, AppConfig]:
@@ -219,55 +174,58 @@ def _print_json(payload: object) -> None:
     sys.stdout.write("\n")
 
 
+def _dump_ok(**kwargs: Any) -> int:
+    _print_json({"status": "ok", **kwargs})
+    return 0
+
+
 def run_experiment(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
+    scenarios = (
+        (ScenarioName.NORMAL, ScenarioName.STRESS) if args.stress else (ScenarioName.NORMAL,)
+    )
     report = run_evaluation(
         config,
         sessions=sessions,
         policies=(args.policy,) if args.policy is not None else None,
         seeds=(args.seed,) if args.seed is not None else None,
-        scenarios=(
-            (ScenarioName.NORMAL, ScenarioName.STRESS) if args.stress else (ScenarioName.NORMAL,)
-        ),
+        scenarios=scenarios,
     )
-    paths = write_evaluation_artifacts(report, config)
-    _print_json(
-        {
-            "status": "ok",
-            "n_runs": len(report.raw_results),
-            "n_policies": len(report.raw_results["policy"].unique()),
-            "n_seeds": len(report.raw_results["seed"].unique()),
-            "n_scenarios": len(report.raw_results["scenario"].unique()),
-            "scenarios": report.metadata["scenarios"],
-            "policies": report.metadata["policies"],
-            "seeds": report.metadata["seeds"],
-            "config_hash": report.metadata["config_hash"],
-            "git_sha": report.metadata["git_sha"],
-            "paths": paths,
-        }
+    res = report.raw_results
+    return _dump_ok(
+        n_runs=len(res),
+        n_policies=res["policy"].nunique(),
+        n_seeds=res["seed"].nunique(),
+        n_scenarios=res["scenario"].nunique(),
+        paths=write_evaluation_artifacts(report, config),
+        **{
+            k: report.metadata[k]
+            for k in ("scenarios", "policies", "seeds", "config_hash", "git_sha")
+        },
     )
-    return 0
 
 
 def run_simulate(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     if args.trip_rate_multiplier is not None:
-        simulation = config.simulation.model_copy(
-            update={"trip_rate_multiplier": args.trip_rate_multiplier}
+        config = config.model_copy(
+            update={
+                "simulation": config.simulation.model_copy(
+                    update={"trip_rate_multiplier": args.trip_rate_multiplier}
+                )
+            }
         )
-        config = config.model_copy(update={"simulation": simulation})
     if args.all_seeds and args.policy is not None:
         raise ValueError(
             "--policy cannot be combined with --all-seeds; use one policy per simulation"
         )
 
     sessions = read_sessions_csv(resolve_data_path(config.data.snapshot_path))
+    sim = config.simulation
     paths = {
-        "stations": resolve_data_path(config.simulation.stations_path),
-        "run": resolve_data_path(config.simulation.run_path),
-        "station_ticks": resolve_data_path(config.simulation.station_ticks_path),
-        "metrics": resolve_data_path(config.simulation.metrics_path),
+        k: resolve_data_path(getattr(sim, f"{k}_path"))
+        for k in ("stations", "run", "station_ticks", "metrics")
     }
 
     if args.all_seeds:
@@ -280,31 +238,32 @@ def run_simulate(args: argparse.Namespace) -> int:
             metrics_path=paths["metrics"],
             metrics=report.metrics,
         )
-        probe = report.probe_row
-        _print_json(
-            {
-                "status": "ok",
-                "gate_passed": report.gate["gate_passed"],
-                "trip_rate_multiplier": config.simulation.trip_rate_multiplier,
-                "n_ticks": config.simulation.steps_per_day,
-                "n_vehicles": config.simulation.fleet_size,
-                "home": {
-                    "n_seeds": len(config.experiment.seeds),
-                    "median_utilization": report.gate["median_utilization"],
-                    "mean_wait_minutes": report.gate["mean_wait_minutes"],
-                    "soc_violations": report.gate["soc_violations"],
-                    "seeds_with_queue": report.gate["seeds_with_queue"],
+        gate, probe = report.gate, report.probe_row
+        return _dump_ok(
+            gate_passed=gate["gate_passed"],
+            trip_rate_multiplier=sim.trip_rate_multiplier,
+            n_ticks=sim.steps_per_day,
+            n_vehicles=sim.fleet_size,
+            home={
+                "n_seeds": len(config.experiment.seeds),
+                **{
+                    k: gate[k]
+                    for k in (
+                        "median_utilization",
+                        "mean_wait_minutes",
+                        "soc_violations",
+                        "seeds_with_queue",
+                    )
                 },
-                "probe": {
-                    "seed": probe["seed"],
-                    "avg_wait_minutes": probe["avg_wait_minutes"],
-                    "peak_queue": probe["peak_queue"],
-                    "wait_delta": report.gate["probe_wait_delta"],
-                },
-                "paths": {k: str(v) for k, v in paths.items()},
-            }
+            },
+            probe={
+                "seed": probe["seed"],
+                "avg_wait_minutes": probe["avg_wait_minutes"],
+                "peak_queue": probe["peak_queue"],
+                "wait_delta": gate["probe_wait_delta"],
+            },
+            paths={k: str(v) for k, v in paths.items()},
         )
-        return 0
 
     seed = _resolve_seed(args, config)
     set_seed(seed)
@@ -323,19 +282,15 @@ def run_simulate(args: argparse.Namespace) -> int:
         station_ticks_path=paths["station_ticks"],
         metrics_path=paths["metrics"],
     )
-    _print_json(
-        {
-            "status": "ok",
-            "seed": seed,
-            "policy": args.policy.value if args.policy is not None else "home",
-            "trip_rate_multiplier": config.simulation.trip_rate_multiplier,
-            "n_ticks": config.simulation.steps_per_day,
-            "n_vehicles": config.simulation.fleet_size,
-            "metrics": result.metrics.model_dump(),
-            "paths": {k: str(v) for k, v in paths.items()},
-        }
+    return _dump_ok(
+        seed=seed,
+        policy=args.policy.value if args.policy is not None else "home",
+        trip_rate_multiplier=sim.trip_rate_multiplier,
+        n_ticks=sim.steps_per_day,
+        n_vehicles=sim.fleet_size,
+        metrics=result.metrics.model_dump(),
+        paths={k: str(v) for k, v in paths.items()},
     )
-    return 0
 
 
 def run_data_pull(args: argparse.Namespace) -> int:
@@ -351,15 +306,7 @@ def run_data_pull(args: argparse.Namespace) -> int:
         site=config.data.site,
         path=path,
     )
-    _print_json(
-        {
-            "status": "ok",
-            "site": config.data.site,
-            "n_sessions": len(frame),
-            "snapshot_path": str(path),
-        }
-    )
-    return 0
+    return _dump_ok(site=config.data.site, n_sessions=len(frame), snapshot_path=str(path))
 
 
 def run_data_features(args: argparse.Namespace) -> int:
@@ -375,15 +322,11 @@ def run_data_features(args: argparse.Namespace) -> int:
         covid_end=localize_naive(config.data.covid_end, config.data.timezone),
     )
     write_demand_csv(demand, processed)
-    _print_json(
-        {
-            "status": "ok",
-            "n_intervals": len(demand),
-            "processed_path": str(processed),
-            "splits": demand["split"].value_counts().to_dict(),
-        }
+    return _dump_ok(
+        n_intervals=len(demand),
+        processed_path=str(processed),
+        splits=demand["split"].value_counts().to_dict(),
     )
-    return 0
 
 
 def run_models_demand(args: argparse.Namespace) -> int:
@@ -398,84 +341,70 @@ def run_models_demand(args: argparse.Namespace) -> int:
         learners=config.models.demand.learners,
         seed=seed,
     )
-    pred_path, met_path, sl_path = (
-        resolve_data_path(config.models.demand.predictions_path),
-        resolve_data_path(config.models.demand.metrics_path),
-        resolve_data_path(config.models.demand.error_slices_path),
-    )
-    write_demand_predictions(predictions, pred_path)
-    write_metrics(metrics, met_path)
-    write_error_slices(error_slices_from_predictions(predictions, demand), sl_path)
+    p_cfg = config.models.demand
+    p_paths = {
+        k: resolve_data_path(getattr(p_cfg, f"{k}_path"))
+        for k in ("predictions", "metrics", "error_slices")
+    }
+    write_demand_predictions(predictions, p_paths["predictions"])
+    write_metrics(metrics, p_paths["metrics"])
+    write_error_slices(error_slices_from_predictions(predictions, demand), p_paths["error_slices"])
     test_mae = test_mae_by_model(metrics)
-    _print_json(
-        {
-            "status": "ok",
-            "n_rows": len(predictions),
-            "seed": seed,
-            "test_mae": test_mae,
-            "learned_beats_baselines": learned_beats_baselines(
-                test_mae, learners=LEARNER_NAMES, baselines=DEMAND_BASELINES
-            ),
-            "best_learned": best_learned(test_mae, LEARNER_NAMES),
-            "decision_model": config.models.demand.decision_model,
-            "predictions_path": str(pred_path),
-            "metrics_path": str(met_path),
-            "error_slices_path": str(sl_path),
-        }
+    return _dump_ok(
+        n_rows=len(predictions),
+        seed=seed,
+        test_mae=test_mae,
+        learned_beats_baselines=learned_beats_baselines(
+            test_mae, learners=LEARNER_NAMES, baselines=DEMAND_BASELINES
+        ),
+        best_learned=best_learned(test_mae, LEARNER_NAMES),
+        decision_model=p_cfg.decision_model,
+        **{f"{k}_path": str(v) for k, v in p_paths.items()},
     )
-    return 0
 
 
 def run_models_energy(args: argparse.Namespace) -> int:
     _, config = _load_from_args(args)
     seed = _resolve_seed(args, config)
     set_seed(seed)
+    m_cfg = config.models.energy
     trips = generate_synthetic_trips(
-        config.models.energy,
+        m_cfg,
         seed=seed,
         train_fraction=config.data.train_fraction,
         val_fraction=config.data.val_fraction,
     )
-    trips_path = resolve_data_path(config.models.energy.trips_path)
-    write_trips_csv(trips, trips_path)
-    predictions, metrics = train_and_predict_energy(trips, spec=config.models.energy, seed=seed)
-    pred_path, met_path = (
-        resolve_data_path(config.models.energy.predictions_path),
-        resolve_data_path(config.models.energy.metrics_path),
-    )
-    write_energy_predictions(predictions, pred_path)
-    write_metrics(metrics, met_path)
+    paths = {
+        k: resolve_data_path(getattr(m_cfg, f"{k}_path"))
+        for k in ("trips", "predictions", "metrics", "cold_metrics")
+    }
+    write_trips_csv(trips, paths["trips"])
+    predictions, metrics = train_and_predict_energy(trips, spec=m_cfg, seed=seed)
+    write_energy_predictions(predictions, paths["predictions"])
+    write_metrics(metrics, paths["metrics"])
     cold_metrics = evaluate_energy_cold_holdout(
         trips.loc[trips["split"] == "train"],
-        spec=config.models.energy,
+        spec=m_cfg,
         seed=seed,
         temperature_c=config.stress.temperature_c,
-        n_trips=config.models.energy.cold_holdout_n_trips,
+        n_trips=m_cfg.cold_holdout_n_trips,
         train_fraction=config.data.train_fraction,
         val_fraction=config.data.val_fraction,
     )
-    cold_path = resolve_data_path(config.models.energy.cold_metrics_path)
-    write_metrics(cold_metrics, cold_path)
+    write_metrics(cold_metrics, paths["cold_metrics"])
     test_mae = test_mae_by_model(metrics)
-    _print_json(
-        {
-            "status": "ok",
-            "n_rows": len(predictions),
-            "n_trips": len(trips),
-            "seed": seed,
-            "test_mae": test_mae,
-            "cold_mae": {str(r["model"]): float(r["mae"]) for _, r in cold_metrics.iterrows()},
-            "learned_beats_baselines": learned_beats_baselines(
-                test_mae, learners=LEARNER_NAMES, baselines=(PHYSICS,)
-            ),
-            "best_learned": best_learned(test_mae, LEARNER_NAMES),
-            "trips_path": str(trips_path),
-            "predictions_path": str(pred_path),
-            "metrics_path": str(met_path),
-            "cold_metrics_path": str(cold_path),
-        }
+    return _dump_ok(
+        n_rows=len(predictions),
+        n_trips=len(trips),
+        seed=seed,
+        test_mae=test_mae,
+        cold_mae={str(r["model"]): float(r["mae"]) for _, r in cold_metrics.iterrows()},
+        learned_beats_baselines=learned_beats_baselines(
+            test_mae, learners=LEARNER_NAMES, baselines=(PHYSICS,)
+        ),
+        best_learned=best_learned(test_mae, LEARNER_NAMES),
+        **{f"{k}_path": str(v) for k, v in paths.items()},
     )
-    return 0
 
 
 def _handle_tune(
@@ -561,18 +490,19 @@ def run_models_tune_energy(args: argparse.Namespace) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "experiment":
+    cmd = args.command
+    if cmd == "experiment":
         return run_experiment(args)
-    if args.command == "simulate":
+    if cmd == "simulate":
         return run_simulate(args)
-    if args.command == "data":
+    if cmd == "data":
         if args.data_command == "pull":
             return run_data_pull(args)
         if args.data_command == "features":
             return run_data_features(args)
         print("usage: chargeopt data {pull,features}", file=sys.stderr)
         return 2
-    if args.command == "models":
+    if cmd == "models":
         if args.models_command == "demand":
             return run_models_demand(args)
         if args.models_command == "energy":
