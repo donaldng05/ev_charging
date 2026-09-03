@@ -6,17 +6,10 @@ import pandas as pd
 
 from chargeopt.simulation.engine import SimResult
 from chargeopt.simulation.report import HOME_ROUTING, metrics_row
-from chargeopt.utils.io import select_columns, write_csv
+from chargeopt.utils.io import read_csv, write_csv
 
-STATION_COLUMNS: tuple[str, ...] = (
-    "station_id",
-    "x_km",
-    "y_km",
-    "n_chargers",
-    "power_kw",
-    "price_per_kwh",
-)
-VEHICLE_TICK_COLUMNS: tuple[str, ...] = (
+STATION_COLUMNS = ("station_id", "x_km", "y_km", "n_chargers", "power_kw", "price_per_kwh")
+VEHICLE_TICK_COLUMNS = (
     "tick",
     "timestamp",
     "vehicle_id",
@@ -31,7 +24,7 @@ VEHICLE_TICK_COLUMNS: tuple[str, ...] = (
     "queued_this_tick",
     "stranded_this_tick",
 )
-STATION_TICK_COLUMNS: tuple[str, ...] = (
+STATION_TICK_COLUMNS = (
     "tick",
     "timestamp",
     "station_id",
@@ -39,7 +32,7 @@ STATION_TICK_COLUMNS: tuple[str, ...] = (
     "queue_len",
     "energy_delivered_kwh",
 )
-METRIC_COLUMNS: tuple[str, ...] = (
+METRIC_COLUMNS = (
     "seed",
     "routing",
     "peak_queue",
@@ -62,40 +55,35 @@ def write_simulation_artifacts(
     metrics: pd.DataFrame | None = None,
 ) -> None:
     """Write canonical station, vehicle-tick, station-tick, and metric CSVs."""
-    _write(result.stations, stations_path, STATION_COLUMNS)
-    _write(result.vehicle_ticks, run_path, VEHICLE_TICK_COLUMNS)
-    _write(result.station_ticks, station_ticks_path, STATION_TICK_COLUMNS)
+    write_csv(result.stations, stations_path, columns=STATION_COLUMNS, label="simulation artifact")
+    write_csv(
+        result.vehicle_ticks, run_path, columns=VEHICLE_TICK_COLUMNS, label="simulation artifact"
+    )
+    write_csv(
+        result.station_ticks,
+        station_ticks_path,
+        columns=STATION_TICK_COLUMNS,
+        label="simulation artifact",
+    )
     frame = metrics if metrics is not None else pd.DataFrame([metrics_row(result, HOME_ROUTING)])
-    _write(frame, metrics_path, METRIC_COLUMNS)
+    write_csv(frame, metrics_path, columns=METRIC_COLUMNS, label="simulation artifact")
 
 
 def read_sim_stations(path: Path) -> pd.DataFrame:
-    return _read(path, STATION_COLUMNS)
+    return read_csv(path, columns=STATION_COLUMNS, label="simulation artifact")
 
 
 def read_vehicle_ticks(path: Path) -> pd.DataFrame:
-    frame = _read(path, VEHICLE_TICK_COLUMNS)
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
-    return frame
+    return read_csv(
+        path, columns=VEHICLE_TICK_COLUMNS, date_columns=("timestamp",), label="simulation artifact"
+    )
 
 
 def read_station_ticks(path: Path) -> pd.DataFrame:
-    frame = _read(path, STATION_TICK_COLUMNS)
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
-    return frame
+    return read_csv(
+        path, columns=STATION_TICK_COLUMNS, date_columns=("timestamp",), label="simulation artifact"
+    )
 
 
 def read_sim_metrics(path: Path) -> pd.DataFrame:
-    return _read(path, METRIC_COLUMNS)
-
-
-def _write(frame: pd.DataFrame, path: Path, columns: tuple[str, ...]) -> None:
-    write_csv(frame, path, columns=columns, label="simulation artifact")
-
-
-def _read(path: Path, columns: tuple[str, ...]) -> pd.DataFrame:
-    if not path.is_file():
-        msg = f"simulation artifact not found: {path}"
-        raise FileNotFoundError(msg)
-    frame = pd.read_csv(path)
-    return select_columns(frame, columns, label="simulation artifact")
+    return read_csv(path, columns=METRIC_COLUMNS, label="simulation artifact")

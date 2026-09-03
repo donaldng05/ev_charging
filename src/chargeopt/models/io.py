@@ -6,38 +6,28 @@ from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
+from pydantic import BaseModel
 
 from chargeopt.data.schemas import DemandPrediction, EnergyPrediction
 from chargeopt.models.learners import RANDOM_FOREST
-from chargeopt.utils.io import select_columns, write_csv
+from chargeopt.utils.io import read_csv, select_columns, write_csv
 
-DEMAND_PREDICTION_COLUMNS: tuple[str, ...] = (
-    "timestamp",
-    "split",
-    "target",
-    "prediction",
-    "model",
-    "seed",
-)
-ENERGY_PREDICTION_COLUMNS: tuple[str, ...] = (
-    "trip_id",
-    "split",
-    "target",
-    "prediction",
-    "model",
-    "seed",
-)
-METRICS_COLUMNS: tuple[str, ...] = ("model", "split", "mae", "rmse", "n")
-ERROR_SLICE_COLUMNS: tuple[str, ...] = (
-    "model",
-    "split",
-    "hour",
-    "is_weekend",
-    "era",
-    "mae",
-    "rmse",
-    "n",
-)
+DEMAND_PREDICTION_COLUMNS = ("timestamp", "split", "target", "prediction", "model", "seed")
+ENERGY_PREDICTION_COLUMNS = ("trip_id", "split", "target", "prediction", "model", "seed")
+METRICS_COLUMNS = ("model", "split", "mae", "rmse", "n")
+ERROR_SLICE_COLUMNS = ("model", "split", "hour", "is_weekend", "era", "mae", "rmse", "n")
+
+
+def _write_validated(
+    frame: pd.DataFrame,
+    path: Path,
+    columns: tuple[str, ...],
+    schema: type[BaseModel],
+) -> None:
+    selected = select_columns(frame, columns, label="prediction table")
+    records = cast(list[dict[str, Any]], selected.to_dict(orient="records"))
+    validated = [schema.model_validate(r).model_dump() for r in records]
+    write_csv(pd.DataFrame(validated), path, label="prediction table")
 
 
 def write_demand_predictions(frame: pd.DataFrame, path: Path) -> None:
@@ -57,16 +47,12 @@ def write_error_slices(frame: pd.DataFrame, path: Path) -> None:
 
 
 def load_demand_forecast(path: Path) -> pd.DataFrame:
-    if not path.is_file():
-        msg = f"demand forecast CSV not found: {path}"
-        raise FileNotFoundError(msg)
-    frame = pd.read_csv(path)
-    missing = [column for column in DEMAND_PREDICTION_COLUMNS if column not in frame.columns]
-    if missing:
-        msg = f"demand forecast missing columns: {missing}"
-        raise ValueError(msg)
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
-    return frame.loc[:, list(DEMAND_PREDICTION_COLUMNS)]
+    return read_csv(
+        path,
+        columns=DEMAND_PREDICTION_COLUMNS,
+        date_columns=("timestamp",),
+        label="demand forecast CSV",
+    )
 
 
 def lookup_predicted_congestion(
@@ -82,15 +68,3 @@ def lookup_predicted_congestion(
         msg = f"no {model!r} forecast at {ts.isoformat()}"
         raise KeyError(msg)
     return float(matched["prediction"].iloc[0])
-
-
-def _write_validated(
-    frame: pd.DataFrame,
-    path: Path,
-    columns: tuple[str, ...],
-    schema: type[DemandPrediction] | type[EnergyPrediction],
-) -> None:
-    selected = select_columns(frame, columns, label="prediction table")
-    records = cast(list[dict[str, Any]], selected.to_dict(orient="records"))
-    validated = [schema.model_validate(record).model_dump() for record in records]
-    write_csv(pd.DataFrame(validated), path, label="prediction table")

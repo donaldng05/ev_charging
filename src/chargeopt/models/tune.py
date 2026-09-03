@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from itertools import product
 from typing import Any
 
@@ -26,51 +26,81 @@ METRIC_COLUMNS = frozenset({"fold", "mae", "rmse", "n", "model"})
 def param_grid(search: Mapping[str, Sequence[Any]]) -> list[dict[str, Any]]:
     keys = list(search)
     if not keys:
-        msg = "search grid is empty"
-        raise ValueError(msg)
-    return [
-        dict(zip(keys, combo, strict=True)) for combo in product(*(search[key] for key in keys))
-    ]
+        raise ValueError("search grid is empty")
+    return [dict(zip(keys, combo, strict=True)) for combo in product(*(search[k] for k in keys))]
 
 
 def expanding_window_splits(
-    n_samples: int,
-    *,
-    n_splits: int,
-    gap: int,
+    n_samples: int, *, n_splits: int, gap: int
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    splitter = TimeSeriesSplit(n_splits=n_splits, gap=gap)
-    dummy = np.zeros(n_samples)
-    return [(train_idx, val_idx) for train_idx, val_idx in splitter.split(dummy)]
+    return list(TimeSeriesSplit(n_splits=n_splits, gap=gap).split(np.zeros(n_samples)))
+
+
+def _coerce_param(value: Any) -> Any:
+    return (
+        int(value)
+        if isinstance(value, np.integer)
+        else float(value)
+        if isinstance(value, np.floating)
+        else value
+    )
 
 
 def select_best_params(
-    fold_metrics: pd.DataFrame,
-    param_keys: Sequence[str] | None = None,
+    fold_metrics: pd.DataFrame, param_keys: Sequence[str] | None = None
 ) -> dict[str, Any]:
-    keys = list(param_keys) if param_keys is not None else _infer_param_keys(fold_metrics)
+    keys = (
+        list(param_keys)
+        if param_keys is not None
+        else [c for c in fold_metrics.columns if c not in METRIC_COLUMNS]
+    )
     grouped = (
         fold_metrics.groupby(keys, sort=True)
         .agg(mae=("mae", "mean"), rmse=("rmse", "mean"))
         .sort_values(["mae", "rmse"], kind="mergesort")
     )
     if grouped.empty:
-        msg = "no fold metrics to select hyperparameters from"
-        raise ValueError(msg)
+        raise ValueError("no fold metrics to select hyperparameters from")
     best = grouped.index[0]
-    if not isinstance(best, tuple):
-        best = (best,)
-    return {key: _coerce_param(value) for key, value in zip(keys, best, strict=True)}
+    best_tuple = best if isinstance(best, tuple) else (best,)
+    return {k: _coerce_param(v) for k, v in zip(keys, best_tuple, strict=True)}
 
 
 def resolve_learner_names(requested: str | None) -> tuple[str, ...]:
     if requested is None:
         return LEARNER_NAMES
     if requested not in LEARNER_NAMES:
-        allowed = ", ".join(LEARNER_NAMES)
-        msg = f"unknown learner {requested!r}; expected one of: {allowed}"
-        raise ValueError(msg)
+        raise ValueError(
+            f"unknown learner {requested!r}; expected one of: {', '.join(LEARNER_NAMES)}"
+        )
     return (requested,)
+
+
+def _tune_grid(
+    train: pd.DataFrame,
+    val: pd.DataFrame,
+    *,
+    search: Mapping[str, Sequence[Any]],
+    learner: str,
+    splits: list[tuple[np.ndarray, np.ndarray]],
+    fit_fn: Callable[[pd.DataFrame, dict[str, Any]], Any],
+    predict_fn: Callable[[pd.DataFrame, Any], np.ndarray],
+    target_col: str,
+) -> tuple[dict[str, Any], pd.DataFrame, float]:
+    rows: list[dict[str, Any]] = []
+    for params in param_grid(search):
+        for fold, (t_idx, v_idx) in enumerate(splits):
+            fold_train, fold_val = train.iloc[t_idx], train.iloc[v_idx]
+            fitted = fit_fn(fold_train, params)
+            pred = predict_fn(fold_val, fitted)
+            stats = regression_metrics(fold_val[target_col].reset_index(drop=True), pd.Series(pred))
+            rows.append({"model": learner, "fold": fold, **params, **stats})
+    fold_metrics = pd.DataFrame(rows)
+    best = select_best_params(fold_metrics, list(search.keys()))
+    fitted = fit_fn(train, best)
+    val_pred = predict_fn(val, fitted)
+    val_stats = regression_metrics(val[target_col].reset_index(drop=True), pd.Series(val_pred))
+    return best, fold_metrics, float(val_stats["mae"])
 
 
 def tune_demand_learner(
@@ -85,58 +115,40 @@ def tune_demand_learner(
     gap: int,
 ) -> tuple[dict[str, Any], pd.DataFrame, float]:
     labeled = add_next_hour_target(
-        demand,
-        horizon_minutes=horizon_minutes,
-        timestep_minutes=timestep_minutes,
+        demand, horizon_minutes=horizon_minutes, timestep_minutes=timestep_minutes
     )
     train = labeled.loc[labeled["split"] == "train"].reset_index(drop=True)
     val = labeled.loc[labeled["split"] == "val"]
-    if train.empty:
-        msg = "no train rows remain after the next-hour split mask"
-        raise ValueError(msg)
-    if val.empty:
-        msg = "no val rows remain after the next-hour split mask"
-        raise ValueError(msg)
+    if train.empty or val.empty:
+        raise ValueError("train/val rows missing after next-hour split mask")
 
-    rows: list[dict[str, Any]] = []
-    for params in param_grid(search):
-        for fold, (train_idx, fold_val_idx) in enumerate(
-            expanding_window_splits(len(train), n_splits=n_splits, gap=gap)
-        ):
-            fold_train = train.iloc[train_idx]
-            fold_val = train.iloc[fold_val_idx]
-            fitted = fit_learner(
-                fold_train,
-                name=learner,
-                feature_columns=DEMAND_FEATURE_COLUMNS,
-                target_column=TARGET_COLUMN,
-                params=params,
-                seed=seed,
-            )
-            predicted = predict_learner(
-                fold_val,
-                fitted,
-                feature_columns=DEMAND_FEATURE_COLUMNS,
-            )
-            stats = regression_metrics(
-                fold_val[TARGET_COLUMN].reset_index(drop=True),
-                pd.Series(predicted),
-            )
-            rows.append({"model": learner, "fold": fold, **params, **stats})
-
-    fold_metrics = pd.DataFrame(rows)
-    best = select_best_params(fold_metrics, list(search.keys()))
-    fitted = fit_learner(
+    return _tune_grid(
         train,
-        name=learner,
-        feature_columns=DEMAND_FEATURE_COLUMNS,
-        target_column=TARGET_COLUMN,
-        params=best,
-        seed=seed,
+        val,
+        search=search,
+        learner=learner,
+        splits=expanding_window_splits(len(train), n_splits=n_splits, gap=gap),
+        fit_fn=lambda df, p: fit_learner(
+            df,
+            name=learner,
+            feature_columns=DEMAND_FEATURE_COLUMNS,
+            target_column=TARGET_COLUMN,
+            params=p,
+            seed=seed,
+        ),
+        predict_fn=lambda df, f: predict_learner(df, f, feature_columns=DEMAND_FEATURE_COLUMNS),
+        target_col=TARGET_COLUMN,
     )
-    val_pred = predict_learner(val, fitted, feature_columns=DEMAND_FEATURE_COLUMNS)
-    val_stats = regression_metrics(val[TARGET_COLUMN].reset_index(drop=True), pd.Series(val_pred))
-    return best, fold_metrics, float(val_stats["mae"])
+
+
+def _collect_tune(
+    results: list[tuple[str, dict[str, Any], pd.DataFrame, float]],
+) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
+    return (
+        {name: best for name, best, _, _ in results},
+        pd.concat([folds for _, _, folds, _ in results], ignore_index=True),
+        {name: mae for name, _, _, mae in results},
+    )
 
 
 def tune_demand_learners(
@@ -151,24 +163,24 @@ def tune_demand_learners(
     names: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
     selected = tuple(names) if names is not None else LEARNER_NAMES
-    best_by_model: dict[str, dict[str, Any]] = {}
-    val_mae: dict[str, float] = {}
-    frames: list[pd.DataFrame] = []
-    for name in selected:
-        best, folds, mae = tune_demand_learner(
-            demand,
-            learner=name,
-            search=learners.search_for(name),
-            timestep_minutes=timestep_minutes,
-            horizon_minutes=horizon_minutes,
-            n_splits=n_splits,
-            seed=seed,
-            gap=gap,
-        )
-        best_by_model[name] = best
-        val_mae[name] = mae
-        frames.append(folds)
-    return best_by_model, pd.concat(frames, ignore_index=True), val_mae
+    return _collect_tune(
+        [
+            (
+                name,
+                *tune_demand_learner(
+                    demand,
+                    learner=name,
+                    search=learners.search_for(name),
+                    timestep_minutes=timestep_minutes,
+                    horizon_minutes=horizon_minutes,
+                    n_splits=n_splits,
+                    seed=seed,
+                    gap=gap,
+                ),
+            )
+            for name in selected
+        ]
+    )
 
 
 def tune_energy_learner(
@@ -181,26 +193,19 @@ def tune_energy_learner(
 ) -> tuple[dict[str, Any], pd.DataFrame, float]:
     train = trips.loc[trips["split"] == "train"]
     val = trips.loc[trips["split"] == "val"]
-    if train.empty:
-        msg = "synthetic trips have no train split"
-        raise ValueError(msg)
-    if val.empty:
-        msg = "synthetic trips have no val split"
-        raise ValueError(msg)
+    if train.empty or val.empty:
+        raise ValueError("synthetic trips have no train/val split")
 
-    rows: list[dict[str, Any]] = []
-    for params in param_grid(search):
-        fitted = fit_residual_learner(train, spec=spec, name=learner, params=params, seed=seed)
-        predicted = predict_residual_learner(val, spec=spec, fitted=fitted)
-        stats = regression_metrics(val["energy_kwh"].reset_index(drop=True), pd.Series(predicted))
-        rows.append({"model": learner, "fold": 0, **params, **stats})
-
-    fold_metrics = pd.DataFrame(rows)
-    best = select_best_params(fold_metrics, list(search.keys()))
-    fitted = fit_residual_learner(train, spec=spec, name=learner, params=best, seed=seed)
-    val_pred = predict_residual_learner(val, spec=spec, fitted=fitted)
-    val_stats = regression_metrics(val["energy_kwh"].reset_index(drop=True), pd.Series(val_pred))
-    return best, fold_metrics, float(val_stats["mae"])
+    return _tune_grid(
+        train,
+        val,
+        search=search,
+        learner=learner,
+        splits=[(np.arange(len(train)), np.arange(len(train)))],
+        fit_fn=lambda df, p: fit_residual_learner(df, spec=spec, name=learner, params=p, seed=seed),
+        predict_fn=lambda df, f: predict_residual_learner(df, spec=spec, fitted=f),
+        target_col="energy_kwh",
+    )
 
 
 def tune_energy_learners(
@@ -211,30 +216,14 @@ def tune_energy_learners(
     names: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame, dict[str, float]]:
     selected = tuple(names) if names is not None else LEARNER_NAMES
-    best_by_model: dict[str, dict[str, Any]] = {}
-    val_mae: dict[str, float] = {}
-    frames: list[pd.DataFrame] = []
-    for name in selected:
-        best, folds, mae = tune_energy_learner(
-            trips,
-            spec=spec,
-            learner=name,
-            search=spec.learners.search_for(name),
-            seed=seed,
-        )
-        best_by_model[name] = best
-        val_mae[name] = mae
-        frames.append(folds)
-    return best_by_model, pd.concat(frames, ignore_index=True), val_mae
-
-
-def _infer_param_keys(fold_metrics: pd.DataFrame) -> list[str]:
-    return [column for column in fold_metrics.columns if column not in METRIC_COLUMNS]
-
-
-def _coerce_param(value: Any) -> Any:
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, np.floating):
-        return float(value)
-    return value
+    return _collect_tune(
+        [
+            (
+                name,
+                *tune_energy_learner(
+                    trips, spec=spec, learner=name, search=spec.learners.search_for(name), seed=seed
+                ),
+            )
+            for name in selected
+        ]
+    )

@@ -26,11 +26,9 @@ class ChargingSession(BaseModel):
     @model_validator(mode="after")
     def end_after_start(self) -> ChargingSession:
         if self.end_time < self.start_time:
-            msg = "end_time must be >= start_time"
-            raise ValueError(msg)
+            raise ValueError("end_time must be >= start_time")
         if self.done_charging_time is not None and self.done_charging_time < self.start_time:
-            msg = "done_charging_time must be >= start_time"
-            raise ValueError(msg)
+            raise ValueError("done_charging_time must be >= start_time")
         return self
 
 
@@ -38,7 +36,6 @@ class Station(BaseModel):
     """EVSE identity from ACN-Data. No invented lat/lon."""
 
     model_config = ConfigDict(extra="forbid")
-
     station_id: str
     site_id: str
     space_id: str | None = None
@@ -77,14 +74,12 @@ class DemandInterval(BaseModel):
     @classmethod
     def lags_non_negative(cls, value: float | None) -> float | None:
         if value is not None and value < 0:
-            msg = "lag and rolling features must be >= 0"
-            raise ValueError(msg)
+            raise ValueError("lag and rolling features must be >= 0")
         return value
 
 
 class SyntheticTrip(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     trip_id: str
     distance_km: float = Field(gt=0)
     duration_min: float = Field(gt=0)
@@ -96,7 +91,6 @@ class SyntheticTrip(BaseModel):
 
 class DemandPrediction(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     timestamp: datetime
     split: Literal["train", "val", "test"]
     target: float
@@ -107,7 +101,6 @@ class DemandPrediction(BaseModel):
 
 class EnergyPrediction(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     trip_id: str
     split: Literal["train", "val", "test"]
     target: float

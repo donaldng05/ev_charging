@@ -36,7 +36,6 @@ DEMAND_FEATURE_COLUMNS: tuple[str, ...] = (
     "rolling_mean_24h",
     "rolling_mean_7d",
 )
-
 FORBIDDEN_FEATURE_COLUMNS: tuple[str, ...] = (
     "energy_kwh",
     "n_arrivals",
@@ -50,20 +49,15 @@ FORBIDDEN_FEATURE_COLUMNS: tuple[str, ...] = (
 
 def horizon_bins(horizon_minutes: int, timestep_minutes: int) -> int:
     if timestep_minutes <= 0 or horizon_minutes % timestep_minutes != 0:
-        msg = "horizon_minutes must be a positive multiple of timestep_minutes"
-        raise ValueError(msg)
+        raise ValueError("horizon_minutes must be a positive multiple of timestep_minutes")
     n_bins = horizon_minutes // timestep_minutes
     if n_bins < 1:
-        msg = "horizon must cover at least one timestep"
-        raise ValueError(msg)
+        raise ValueError("horizon must cover at least one timestep")
     return n_bins
 
 
 def add_next_hour_target(
-    demand: pd.DataFrame,
-    *,
-    horizon_minutes: int,
-    timestep_minutes: int,
+    demand: pd.DataFrame, *, horizon_minutes: int, timestep_minutes: int
 ) -> pd.DataFrame:
     n_bins = horizon_bins(horizon_minutes, timestep_minutes)
     energy = demand["energy_kwh"].astype(float)
@@ -72,8 +66,8 @@ def add_next_hour_target(
         target = target + energy.shift(-step)
     same_split = pd.Series(True, index=demand.index)
     for step in range(1, n_bins + 1):
-        future_split = demand["split"].shift(-step)
-        same_split &= future_split.notna() & future_split.eq(demand["split"])
+        fut = demand["split"].shift(-step)
+        same_split &= fut.notna() & fut.eq(demand["split"])
     labeled = demand.copy()
     labeled[TARGET_COLUMN] = target
     return labeled.loc[same_split].reset_index(drop=True)
@@ -88,24 +82,30 @@ def train_and_predict_demand(
     seed: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     labeled = add_next_hour_target(
-        demand,
-        horizon_minutes=horizon_minutes,
-        timestep_minutes=timestep_minutes,
+        demand, horizon_minutes=horizon_minutes, timestep_minutes=timestep_minutes
     )
-    n_bins = horizon_bins(horizon_minutes, timestep_minutes)
     fit_frame = labeled.loc[labeled["split"].isin(["train", "val"])]
     if fit_frame.empty:
-        msg = "no train/val rows remain after the next-hour split mask"
-        raise ValueError(msg)
+        raise ValueError("no train/val rows remain after the next-hour split mask")
 
-    last_obs = last_observation_forecast(labeled, n_bins)
-    historical = fit_historical_average(fit_frame, target_column=TARGET_COLUMN)
-    hist_pred = predict_historical_average(labeled, historical)
-    weekly = weekly_naive_forecast(labeled[TARGET_COLUMN], n_week_bins=LAG_1W)
+    n_bins = horizon_bins(horizon_minutes, timestep_minutes)
+    hist_avg = fit_historical_average(fit_frame, target_column=TARGET_COLUMN)
     frames = [
-        _demand_prediction_frame(labeled, last_obs.to_numpy(), LAST_OBSERVATION, seed),
-        _demand_prediction_frame(labeled, hist_pred.to_numpy(), HISTORICAL_AVERAGE, seed),
-        _demand_prediction_frame(labeled, weekly.to_numpy(), WEEKLY_NAIVE, seed),
+        _demand_prediction_frame(
+            labeled, last_observation_forecast(labeled, n_bins).to_numpy(), LAST_OBSERVATION, seed
+        ),
+        _demand_prediction_frame(
+            labeled,
+            predict_historical_average(labeled, hist_avg).to_numpy(),
+            HISTORICAL_AVERAGE,
+            seed,
+        ),
+        _demand_prediction_frame(
+            labeled,
+            weekly_naive_forecast(labeled[TARGET_COLUMN], n_week_bins=LAG_1W).to_numpy(),
+            WEEKLY_NAIVE,
+            seed,
+        ),
     ]
     for name in LEARNER_NAMES:
         fitted = fit_learner(
@@ -116,23 +116,19 @@ def train_and_predict_demand(
             params=learners.params_for(name),
             seed=seed,
         )
-        predicted = predict_learner(
-            labeled,
-            fitted,
-            feature_columns=DEMAND_FEATURE_COLUMNS,
-        )
-        frames.append(_demand_prediction_frame(labeled, predicted, name, seed))
+        pred = predict_learner(labeled, fitted, feature_columns=DEMAND_FEATURE_COLUMNS)
+        frames.append(_demand_prediction_frame(labeled, pred, name, seed))
 
-    predictions = pd.concat(frames, ignore_index=True)
-    predictions = predictions.dropna(subset=["target", "prediction"]).reset_index(drop=True)
+    predictions = (
+        pd.concat(frames, ignore_index=True)
+        .dropna(subset=["target", "prediction"])
+        .reset_index(drop=True)
+    )
     return predictions, metrics_from_predictions(predictions)
 
 
 def _demand_prediction_frame(
-    labeled: pd.DataFrame,
-    prediction: np.ndarray,
-    model: str,
-    seed: int,
+    labeled: pd.DataFrame, prediction: np.ndarray, model: str, seed: int
 ) -> pd.DataFrame:
     return pd.DataFrame(
         {

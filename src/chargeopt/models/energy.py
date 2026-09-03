@@ -16,10 +16,7 @@ from chargeopt.models.metrics import metrics_from_predictions, regression_metric
 PHYSICS = "physics"
 RANDOM_FOREST = "random_forest"
 RESIDUAL_COLUMN = "energy_residual_kwh"
-ENERGY_FEATURE_COLUMNS: tuple[str, ...] = (
-    "distance_km",
-    "temperature_c",
-)
+ENERGY_FEATURE_COLUMNS: tuple[str, ...] = ("distance_km", "temperature_c")
 
 
 def physics_energy(distance_km: pd.Series, rate_kwh_per_km: float) -> pd.Series:
@@ -31,17 +28,12 @@ def residual_energy_target(trips: pd.DataFrame, rate_kwh_per_km: float) -> pd.Se
 
 
 def fit_residual_learner(
-    train: pd.DataFrame,
-    *,
-    spec: EnergyModelConfig,
-    name: str,
-    params: Mapping[str, Any],
-    seed: int,
+    train: pd.DataFrame, *, spec: EnergyModelConfig, name: str, params: Mapping[str, Any], seed: int
 ) -> FittedLearner:
-    residual_frame = train.copy()
-    residual_frame[RESIDUAL_COLUMN] = residual_energy_target(train, spec.rate_kwh_per_km)
+    frame = train.copy()
+    frame[RESIDUAL_COLUMN] = residual_energy_target(train, spec.rate_kwh_per_km)
     return fit_learner(
-        residual_frame,
+        frame,
         name=name,
         feature_columns=ENERGY_FEATURE_COLUMNS,
         target_column=RESIDUAL_COLUMN,
@@ -51,41 +43,36 @@ def fit_residual_learner(
 
 
 def predict_residual_learner(
-    trips: pd.DataFrame,
-    *,
-    spec: EnergyModelConfig,
-    fitted: FittedLearner,
+    trips: pd.DataFrame, *, spec: EnergyModelConfig, fitted: FittedLearner
 ) -> np.ndarray:
-    residual = predict_learner(trips, fitted, feature_columns=ENERGY_FEATURE_COLUMNS)
-    physics = physics_energy(trips["distance_km"], spec.rate_kwh_per_km).to_numpy()
-    return np.asarray(np.maximum(physics + residual, 0.0), dtype=float)
+    res = predict_learner(trips, fitted, feature_columns=ENERGY_FEATURE_COLUMNS)
+    phys = physics_energy(trips["distance_km"], spec.rate_kwh_per_km).to_numpy()
+    return np.asarray(np.maximum(phys + res, 0.0), dtype=float)
 
 
 def train_and_predict_energy(
-    trips: pd.DataFrame,
-    *,
-    spec: EnergyModelConfig,
-    seed: int,
+    trips: pd.DataFrame, *, spec: EnergyModelConfig, seed: int
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     train = trips.loc[trips["split"] == "train"]
     if train.empty:
-        msg = "synthetic trips have no train split"
-        raise ValueError(msg)
+        raise ValueError("synthetic trips have no train split")
 
-    physics = physics_energy(trips["distance_km"], spec.rate_kwh_per_km)
-    frames = [_energy_prediction_frame(trips, physics.to_numpy(), PHYSICS, seed)]
+    phys = physics_energy(trips["distance_km"], spec.rate_kwh_per_km)
+    frames = [_energy_prediction_frame(trips, phys.to_numpy(), PHYSICS, seed)]
     for name in LEARNER_NAMES:
         fitted = fit_residual_learner(
-            train,
-            spec=spec,
-            name=name,
-            params=spec.learners.params_for(name),
-            seed=seed,
+            train, spec=spec, name=name, params=spec.learners.params_for(name), seed=seed
         )
-        predicted = predict_residual_learner(trips, spec=spec, fitted=fitted)
-        frames.append(_energy_prediction_frame(trips, predicted, name, seed))
-    predictions = pd.concat(frames, ignore_index=True)
-    predictions = predictions.dropna(subset=["target", "prediction"]).reset_index(drop=True)
+        frames.append(
+            _energy_prediction_frame(
+                trips, predict_residual_learner(trips, spec=spec, fitted=fitted), name, seed
+            )
+        )
+    predictions = (
+        pd.concat(frames, ignore_index=True)
+        .dropna(subset=["target", "prediction"])
+        .reset_index(drop=True)
+    )
     return predictions, metrics_from_predictions(predictions)
 
 
@@ -99,41 +86,38 @@ def evaluate_energy_cold_holdout(
     train_fraction: float,
     val_fraction: float,
 ) -> pd.DataFrame:
-    cold_spec = spec.model_copy(update={"n_trips": n_trips})
     cold = generate_synthetic_trips(
-        cold_spec,
+        spec.model_copy(update={"n_trips": n_trips}),
         seed=seed,
         train_fraction=train_fraction,
         val_fraction=val_fraction,
         temperature_c=temperature_c,
     )
-    physics = physics_energy(cold["distance_km"], spec.rate_kwh_per_km).to_numpy()
+    phys = physics_energy(cold["distance_km"], spec.rate_kwh_per_km).to_numpy()
     rows = [
         {
             "model": PHYSICS,
             "split": "cold",
-            **regression_metrics(cold["energy_kwh"], pd.Series(physics)),
+            **regression_metrics(cold["energy_kwh"], pd.Series(phys)),
         }
     ]
     for name in LEARNER_NAMES:
         fitted = fit_residual_learner(
-            train,
-            spec=spec,
-            name=name,
-            params=spec.learners.params_for(name),
-            seed=seed,
+            train, spec=spec, name=name, params=spec.learners.params_for(name), seed=seed
         )
-        predicted = predict_residual_learner(cold, spec=spec, fitted=fitted)
-        stats = regression_metrics(cold["energy_kwh"], pd.Series(predicted))
-        rows.append({"model": name, "split": "cold", **stats})
+        pred = predict_residual_learner(cold, spec=spec, fitted=fitted)
+        rows.append(
+            {
+                "model": name,
+                "split": "cold",
+                **regression_metrics(cold["energy_kwh"], pd.Series(pred)),
+            }
+        )
     return pd.DataFrame(rows)
 
 
 def _energy_prediction_frame(
-    trips: pd.DataFrame,
-    prediction: np.ndarray,
-    model: str,
-    seed: int,
+    trips: pd.DataFrame, prediction: np.ndarray, model: str, seed: int
 ) -> pd.DataFrame:
     return pd.DataFrame(
         {
