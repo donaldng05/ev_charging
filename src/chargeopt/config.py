@@ -12,14 +12,7 @@ from pathlib import Path
 from typing import Any, Self, cast
 
 import yaml
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationInfo,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,22 +56,12 @@ class SimulationConfig(BaseModel):
     station_ticks_path: Path
     metrics_path: Path
 
-    @field_validator("timestep_minutes")
-    @classmethod
-    def timestep_must_divide_hour(cls, value: int) -> int:
-        if value not in (15, 30):
-            raise ValueError("timestep_minutes must be 15 or 30 for MVP")
-        return value
-
-    @field_validator("trip_rate_multiplier")
-    @classmethod
-    def trip_rate_multiplier_must_be_finite(cls, value: float) -> float:
-        if not math.isfinite(value):
-            raise ValueError("trip_rate_multiplier must be finite")
-        return value
-
     @model_validator(mode="after")
-    def soc_and_price_bounds(self) -> Self:
+    def bounds(self) -> Self:
+        if self.timestep_minutes not in (15, 30):
+            raise ValueError("timestep_minutes must be 15 or 30 for MVP")
+        if not math.isfinite(self.trip_rate_multiplier):
+            raise ValueError("trip_rate_multiplier must be finite")
         if self.soc_min >= self.soc_charge_target:
             raise ValueError("soc_min must be below soc_charge_target")
         if self.price_per_kwh_min > self.price_per_kwh_max:
@@ -106,10 +89,7 @@ class ExperimentConfig(BaseModel):
 
 
 class EvaluationConfig(BaseModel):
-    """Reproducible M5 evaluation artifact settings."""
-
     model_config = ConfigDict(extra="forbid")
-
     raw_results_path: Path
     summary_path: Path
     robustness_path: Path
@@ -119,17 +99,13 @@ class EvaluationConfig(BaseModel):
 
 class StressConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     demand_multiplier: float = Field(gt=0)
     temperature_c: float
     station_availability: float = Field(gt=0, le=1)
 
 
 class PolicyScoringConfig(BaseModel):
-    """Frozen weights for the deterministic ML-informed station score."""
-
     model_config = ConfigDict(extra="forbid")
-
     distance_weight: float = Field(ge=0)
     price_weight: float = Field(ge=0)
     queue_weight: float = Field(ge=0)
@@ -152,34 +128,22 @@ LEARNER_NAMES: tuple[str, ...] = (
 )
 
 
-def _check_positive_ints(value: list[int]) -> list[int]:
-    if any(item < 1 for item in value):
-        raise ValueError("search grid values must be >= 1")
-    return value
-
-
-def _check_positive_floats(value: list[float]) -> list[float]:
-    if any(item <= 0 for item in value):
-        raise ValueError("search grid values must be > 0")
-    return value
-
-
 class TreeSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     n_estimators: list[int] = Field(min_length=1)
     max_depth: list[int] = Field(min_length=1)
     min_samples_leaf: list[int] = Field(min_length=1)
 
-    @field_validator("n_estimators", "max_depth", "min_samples_leaf")
-    @classmethod
-    def grid_values_positive(cls, value: list[int]) -> list[int]:
-        return _check_positive_ints(value)
+    @model_validator(mode="after")
+    def check_positive(self) -> Self:
+        for f in ("n_estimators", "max_depth", "min_samples_leaf"):
+            if any(x < 1 for x in getattr(self, f)):
+                raise ValueError("search grid values must be >= 1")
+        return self
 
 
 class TreeLearnerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     n_estimators: int = Field(ge=1)
     max_depth: int = Field(ge=1)
     min_samples_leaf: int = Field(ge=1)
@@ -188,44 +152,38 @@ class TreeLearnerConfig(BaseModel):
 
 class RidgeSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     alpha: list[float] = Field(min_length=1)
 
     @field_validator("alpha")
     @classmethod
-    def alpha_positive(cls, value: list[float]) -> list[float]:
-        return _check_positive_floats(value)
+    def alpha_positive(cls, v: list[float]) -> list[float]:
+        if any(x <= 0 for x in v):
+            raise ValueError("search grid values must be > 0")
+        return v
 
 
 class RidgeLearnerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     alpha: float = Field(gt=0)
     search: RidgeSearch
 
 
 class ElasticNetSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     alpha: list[float] = Field(min_length=1)
     l1_ratio: list[float] = Field(min_length=1)
 
-    @field_validator("alpha")
-    @classmethod
-    def alpha_positive(cls, value: list[float]) -> list[float]:
-        return _check_positive_floats(value)
-
-    @field_validator("l1_ratio")
-    @classmethod
-    def l1_ratio_unit_interval(cls, value: list[float]) -> list[float]:
-        if any(item < 0 or item > 1 for item in value):
+    @model_validator(mode="after")
+    def check_ranges(self) -> Self:
+        if any(x <= 0 for x in self.alpha):
+            raise ValueError("search grid values must be > 0")
+        if any(x < 0 or x > 1 for x in self.l1_ratio):
             raise ValueError("l1_ratio search values must be in [0, 1]")
-        return value
+        return self
 
 
 class ElasticNetLearnerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     alpha: float = Field(gt=0)
     l1_ratio: float = Field(ge=0, le=1)
     search: ElasticNetSearch
@@ -233,26 +191,23 @@ class ElasticNetLearnerConfig(BaseModel):
 
 class HistGradientBoostingSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     max_iter: list[int] = Field(min_length=1)
     max_depth: list[int] = Field(min_length=1)
     learning_rate: list[float] = Field(min_length=1)
     min_samples_leaf: list[int] = Field(min_length=1)
 
-    @field_validator("max_iter", "max_depth", "min_samples_leaf")
-    @classmethod
-    def grid_values_positive(cls, value: list[int]) -> list[int]:
-        return _check_positive_ints(value)
-
-    @field_validator("learning_rate")
-    @classmethod
-    def learning_rate_positive(cls, value: list[float]) -> list[float]:
-        return _check_positive_floats(value)
+    @model_validator(mode="after")
+    def check_ranges(self) -> Self:
+        for f in ("max_iter", "max_depth", "min_samples_leaf"):
+            if any(x < 1 for x in getattr(self, f)):
+                raise ValueError("search grid values must be >= 1")
+        if any(x <= 0 for x in self.learning_rate):
+            raise ValueError("search grid values must be > 0")
+        return self
 
 
 class HistGradientBoostingLearnerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     max_iter: int = Field(ge=1)
     max_depth: int = Field(ge=1)
     learning_rate: float = Field(gt=0)
@@ -262,7 +217,6 @@ class HistGradientBoostingLearnerConfig(BaseModel):
 
 class LearnerSuite(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     random_forest: TreeLearnerConfig
     ridge: RidgeLearnerConfig
     elasticnet: ElasticNetLearnerConfig
@@ -270,16 +224,15 @@ class LearnerSuite(BaseModel):
     hist_gradient_boosting: HistGradientBoostingLearnerConfig
 
     def params_for(self, name: str) -> dict[str, Any]:
-        payload = self.learner(name).model_dump()
-        payload.pop("search")
-        return payload
+        p = self.learner(name).model_dump()
+        p.pop("search")
+        return p
 
     def search_for(self, name: str) -> dict[str, list[Any]]:
         return self.learner(name).search.model_dump()
 
     def learner(
-        self,
-        name: str,
+        self, name: str
     ) -> (
         TreeLearnerConfig
         | RidgeLearnerConfig
@@ -294,13 +247,11 @@ class LearnerSuite(BaseModel):
                 | HistGradientBoostingLearnerConfig,
                 getattr(self, name),
             )
-        allowed = ", ".join(LEARNER_NAMES)
-        raise ValueError(f"unknown learner {name!r}; expected one of: {allowed}")
+        raise ValueError(f"unknown learner {name!r}; expected one of: {', '.join(LEARNER_NAMES)}")
 
 
 class DemandModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     horizon_minutes: int = Field(gt=0)
     n_splits: int = Field(ge=2)
     decision_model: str
@@ -314,14 +265,14 @@ class DemandModelConfig(BaseModel):
     @classmethod
     def decision_model_is_learner(cls, value: str) -> str:
         if value not in LEARNER_NAMES:
-            allowed = ", ".join(LEARNER_NAMES)
-            raise ValueError(f"models.demand.decision_model must be one of: {allowed}")
+            raise ValueError(
+                f"models.demand.decision_model must be one of: {', '.join(LEARNER_NAMES)}"
+            )
         return value
 
 
 class EnergyModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     n_trips: int = Field(ge=1)
     rate_kwh_per_km: float = Field(gt=0)
     distance_km_mean: float = Field(gt=0)
@@ -344,14 +295,12 @@ class EnergyModelConfig(BaseModel):
 
 class ModelsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     demand: DemandModelConfig
     energy: EnergyModelConfig
 
 
 class DataConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     site: str
     timezone: str
     start: datetime
@@ -363,16 +312,11 @@ class DataConfig(BaseModel):
     covid_start: datetime
     covid_end: datetime
 
-    @field_validator("site")
-    @classmethod
-    def site_must_be_acn(cls, value: str) -> str:
-        allowed = {"caltech", "jpl", "office001"}
-        if value not in allowed:
-            raise ValueError(f"data.site must be one of {sorted(allowed)}")
-        return value
-
     @model_validator(mode="after")
-    def range_and_split(self) -> Self:
+    def validate_data(self) -> Self:
+        allowed = {"caltech", "jpl", "office001"}
+        if self.site not in allowed:
+            raise ValueError(f"data.site must be one of {sorted(allowed)}")
         if self.end <= self.start:
             raise ValueError("data.end must be after data.start")
         if self.covid_end <= self.covid_start:
@@ -384,7 +328,6 @@ class DataConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     level: str = "INFO"
 
     @field_validator("level")
@@ -398,10 +341,7 @@ class LoggingConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    """Frozen experiment contract loaded from YAML."""
-
     model_config = ConfigDict(extra="forbid")
-
     simulation: SimulationConfig
     data: DataConfig
     experiment: ExperimentConfig
@@ -418,9 +358,7 @@ class AppConfig(BaseModel):
         if missing:
             names = ", ".join(sorted(p.value for p in missing))
             raise ValueError(f"experiment.policies must include MVP policies; missing: {names}")
-        step = self.simulation.timestep_minutes
-        horizon = self.models.demand.horizon_minutes
-        if horizon % step != 0:
+        if self.models.demand.horizon_minutes % self.simulation.timestep_minutes != 0:
             raise ValueError(
                 "models.demand.horizon_minutes must be divisible by simulation.timestep_minutes"
             )
@@ -428,17 +366,13 @@ class AppConfig(BaseModel):
 
 
 class RuntimeSettings(BaseSettings):
-    """Process-level overrides. Experiment numbers still come from YAML."""
-
     model_config = SettingsConfigDict(env_prefix="CHARGEOPT_", extra="ignore")
-
     config_path: Path = Path("configs/default.yaml")
     log_level: str | None = None
     acn_token: str = "DEMO_TOKEN"
 
 
 def default_config_path() -> Path:
-    """Repo-root `configs/default.yaml` when running from a checkout."""
     return project_root() / "configs" / "default.yaml"
 
 
@@ -448,15 +382,9 @@ def resolve_config_path(path: Path | None = None) -> Path:
         if not resolved.is_file():
             raise FileNotFoundError(f"config file not found: {resolved}")
         return resolved
-
-    cwd_candidate = Path("configs/default.yaml")
-    if cwd_candidate.is_file():
-        return cwd_candidate.resolve()
-
-    packaged = default_config_path()
-    if packaged.is_file():
-        return packaged
-
+    for p in (Path("configs/default.yaml"), default_config_path()):
+        if p.is_file():
+            return p.resolve()
     raise FileNotFoundError("config file not found: configs/default.yaml")
 
 
